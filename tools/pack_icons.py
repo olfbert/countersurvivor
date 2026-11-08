@@ -105,6 +105,32 @@ def briefcase_icon():
     return combine(S, [body, handle, locks])
 
 
+def c4_icon():
+    S = (200, 110)
+    P = lambda box, r=6: (lambda d, W, H: d.rounded_rectangle([int(W * box[0]), int(H * box[1]), int(W * box[2]), int(H * box[3])], radius=r, fill=255))
+    body = part(S, P((.08, .30, .92, .86)), (120, 124, 96), (62, 64, 48))
+    tape = part(S, P((.30, .30, .40, .86), 2), (40, 40, 36), (24, 24, 22))
+    tape2 = part(S, P((.62, .30, .72, .86), 2), (40, 40, 36), (24, 24, 22))
+    pad = part(S, P((.36, .12, .66, .44), 4), (52, 54, 50), (20, 20, 20))
+    disp = part(S, P((.40, .18, .62, .30), 2), (255, 70, 50), (190, 30, 20), edge=(40, 10, 10))
+    wires = Image.new("RGBA", (S[0] * 2, S[1] * 2)); wd = ImageDraw.Draw(wires)
+    wd.line([(int(S[0] * 2 * .66), int(S[1] * 2 * .3)), (int(S[0] * 2 * .86), int(S[1] * 2 * .12))], fill=(200, 40, 30, 255), width=5)
+    wd.line([(int(S[0] * 2 * .36), int(S[1] * 2 * .3)), (int(S[0] * 2 * .16), int(S[1] * 2 * .14))], fill=(40, 90, 200, 255), width=5)
+    return combine(S, [body, tape, tape2, wires, pad, disp])
+
+
+def hs_icon():
+    S = (120, 120)
+    W, H = S[0] * 2, S[1] * 2
+    out = Image.new("RGBA", (W, H)); d = ImageDraw.Draw(out)
+    d.ellipse([20, 20, W - 20, H - 20], outline=(20, 20, 22, 255), width=22)
+    d.ellipse([24, 24, W - 24, H - 24], outline=(200, 205, 210, 255), width=12)
+    for a, b in (((W // 2, 4), (W // 2, 70)), ((W // 2, H - 70), (W // 2, H - 4)), ((4, H // 2), (70, H // 2)), ((W - 70, H // 2), (W - 4, H // 2))):
+        d.line([a, b], fill=(20, 20, 22, 255), width=16); d.line([a, b], fill=(200, 205, 210, 255), width=8)
+    d.ellipse([W // 2 - 18, H // 2 - 18, W // 2 + 18, H // 2 + 18], fill=(230, 40, 30, 255), outline=(60, 10, 10, 255), width=4)
+    return out.resize(S, Image.LANCZOS)
+
+
 def main():
     out = {}
     for k, path in ICONS.items():
@@ -116,6 +142,8 @@ def main():
     out["knife"] = data_url(fit(trim(knife_icon())))
     out["shoes"] = data_url(fit(trim(boot_icon())))
     out["briefcase"] = data_url(fit(trim(briefcase_icon())))
+    out["c4"] = data_url(fit(trim(c4_icon())))
+    out["hstrain"] = data_url(fit(trim(hs_icon())))
     # Kisten-Texturen aus der WAD (Waffenkiste)
     d = open(WAD, "rb").read()
     magic, n, off = struct.unpack("<4sii", d[:12])

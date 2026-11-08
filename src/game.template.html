@@ -92,6 +92,15 @@
   #wbar .slot img { max-width: 90%; max-height: 90%; }
   #wbar .slot b { position: absolute; right: 2px; bottom: -1px; font: bold 10px Tahoma, Verdana, sans-serif; color: var(--hud); text-shadow: 0 1px 1px #000; }
   #wbar .sep { width: 4px; }
+  #wbar .slot.evo { border-color: #ffd34a; box-shadow: 0 0 6px rgba(255, 210, 70, .7); background: rgba(80, 64, 20, .75); }
+  #wbar .slot.ready { border-color: #8fe08a; animation: pulse 1s infinite alternate; }
+  @keyframes pulse { from { box-shadow: 0 0 0 rgba(140, 230, 130, 0); } to { box-shadow: 0 0 8px rgba(140, 230, 130, .9); } }
+  .card .tg.evo { color: #ffd34a; }
+  #evoList { font-size: 11px; line-height: 1.5; columns: 2; column-gap: 18px; }
+  #evoList div { break-inside: avoid; opacity: .75; margin-bottom: 5px; }
+  #evoList b { font-size: 12px; }
+  #evoList div.done { opacity: 1; color: #ffd34a; }
+  #evoList img { height: 12px; vertical-align: middle; margin: 0 3px; }
   #money { position: absolute; right: max(18px, calc(env(safe-area-inset-right) + 10px)); bottom: max(46px, calc(env(safe-area-inset-bottom) + 38px));
     font: bold 20px Tahoma, Verdana, sans-serif; color: #8fe08a; text-shadow: 0 1px 3px #000; pointer-events: none; }
   .touch #money { right: max(118px, calc(env(safe-area-inset-right) + 110px)); }
@@ -151,7 +160,7 @@
 <div class="overlay show" id="start">
   <div class="box">
     <h1>COUNTER-SURVIVORS</h1>
-    <p class="muted">Phase 3 · Survivors-Loop · v__VERSION__</p>
+    <p class="muted">Mehr Waffen + Evolutionen · v__VERSION__</p>
     <div class="barwrap"><div class="barfill" id="loadbar"></div></div>
     <p class="muted" id="loadtxt">Lade Map …</p>
     <div id="err"></div>
@@ -180,7 +189,7 @@
 <div class="overlay" id="menu">
   <div class="box">
     <h1>PAUSE</h1>
-    <p class="muted">Counter-Survivors · v__VERSION__ · Phase 3</p>
+    <p class="muted">Counter-Survivors · v__VERSION__</p>
     <h2>Teleport</h2>
     <div class="grid" id="tpGrid"></div>
     <h2>Einstellungen</h2>
@@ -190,6 +199,9 @@
       <button id="fpsBtn"></button>
       <button id="bhopBtn"></button>
     </div>
+    <h2>Evolutionen</h2>
+    <p class="muted" style="margin-top:0">Waffe auf Stufe 8 + passende Ausrüstung, dann eine Waffenkiste von Elites oder Bossen aufsammeln.</p>
+    <div id="evoList"></div>
     <h2>Test</h2>
     <div class="grid">
       <button id="skipBtn">Zeit +1 Min</button><button id="lvlBtn">Level-Up</button>
@@ -352,6 +364,7 @@ const CONTENTS_EMPTY = -1, CONTENTS_SOLID = -2;
 const TOOL_TEX = new Set(['hint', 'skip', 'clip', 'null', 'origin', 'aaatrigger', 'bevel']);
 const HIDDEN_CLASSES = new Set(['func_bomb_target', 'func_buyzone', 'func_hostage_rescue', 'func_vip_safetyzone', 'func_escapezone', 'func_ladder', 'func_mortar_field']);
 const NONSOLID_CLASSES = new Set(['func_illusionary']);
+const PROP_MODELS = new Set();   // Deko-Modelle, die schon als echtes Modell vorliegen
 
 function parseEntities(text) {
   const ents = [];
@@ -448,8 +461,15 @@ function buildWorld(bsp, textures) {
     const cls = e.classname || '';
     if (HIDDEN_CLASSES.has(cls) || cls.startsWith('trigger_')) continue;
     // GoldSrc: fehlt renderamt, ist es 0 -> bei Rendermode != normal unsichtbar (z. B. unsichtbare Sperren)
-    const mode = +(e.rendermode || 0), amt = e.renderamt !== undefined ? +e.renderamt : (mode === 0 ? 255 : 0);
-    if (mode !== 0 && amt === 0) continue;
+    let mode = +(e.rendermode || 0), amt = e.renderamt !== undefined ? +e.renderamt : (mode === 0 ? 255 : 0);
+    if (mode !== 0 && amt === 0) {
+      // Unsichtbare Kollisionsbox eines Deko-Modells (cycler_sprite)? Solange das Modell fehlt: Box als Platzhalter zeichnen
+      const m = bsp.models[+e.model.slice(1)], c = [(m.mins[0] + m.maxs[0]) / 2, (m.mins[1] + m.maxs[1]) / 2];
+      const prop = bsp.entities.some(o => o.classname === 'cycler_sprite' && /\.mdl$/i.test(o.model || '') &&
+        Math.hypot(vec3(o.origin)[0] - c[0], vec3(o.origin)[1] - c[1]) < 96 && !PROP_MODELS.has((o.model || '').toLowerCase()));
+      if (!prop) continue;
+      mode = 0; amt = 255;
+    }
     drawModels.push({ model: +e.model.slice(1), origin: vec3(e.origin), mode, amt });
   }
   // 2) Flaechen sammeln, Lightmap-Groessen bestimmen
@@ -1176,19 +1196,20 @@ const ENEMY_TYPES = {
 };
 // ab Minute t: hoechstens max Gegner gleichzeitig, rate Spawns pro Sekunde, Mischung der Typen
 const WAVES = [
-  { t: 0, max: 12, rate: 2, mix: { terror: 1 } },
-  { t: 1, max: 22, rate: 3, mix: { terror: 3, leet: 2 } },
-  { t: 2, max: 32, rate: 4, mix: { terror: 3, leet: 2, guerilla: 1 } },
-  { t: 3, max: 45, rate: 5, mix: { terror: 3, leet: 2, guerilla: 1, arctic: 1 } },
-  { t: 5, max: 60, rate: 6, mix: { terror: 3, leet: 2, guerilla: 1, arctic: 1, militia: 1 } },
-  { t: 7, max: 80, rate: 7, mix: { terror: 3, leet: 3, guerilla: 2, arctic: 2, militia: 1 } },
-  { t: 10, max: 100, rate: 8, mix: { terror: 3, leet: 3, guerilla: 2, arctic: 2, militia: 2 } },
-  { t: 12, max: 120, rate: 10, mix: { terror: 2, leet: 3, guerilla: 2, arctic: 3, militia: 2 } },
-  { t: 14, max: 150, rate: 14, mix: { terror: 2, leet: 3, guerilla: 2, arctic: 3, militia: 2 }, elite: 0.08 },
+  { t: 0, max: 8, rate: 1.5, mix: { terror: 1 } },
+  { t: 1, max: 16, rate: 2.5, mix: { terror: 3, leet: 1 } },
+  { t: 2, max: 28, rate: 4, mix: { terror: 3, leet: 2, guerilla: 1 } },
+  { t: 3, max: 42, rate: 5, mix: { terror: 3, leet: 2, guerilla: 1, arctic: 1 } },
+  { t: 5, max: 60, rate: 7, mix: { terror: 3, leet: 2, guerilla: 1, arctic: 1, militia: 1 } },
+  { t: 7, max: 85, rate: 9, mix: { terror: 3, leet: 3, guerilla: 2, arctic: 2, militia: 1 } },
+  { t: 9, max: 110, rate: 11, mix: { terror: 3, leet: 3, guerilla: 2, arctic: 2, militia: 2 } },
+  { t: 11, max: 140, rate: 13, mix: { terror: 2, leet: 3, guerilla: 2, arctic: 3, militia: 2 } },
+  { t: 13, max: 180, rate: 16, mix: { terror: 2, leet: 3, guerilla: 3, arctic: 3, militia: 2 }, elite: 0.04 },
+  { t: 14, max: 220, rate: 20, mix: { terror: 2, leet: 3, guerilla: 3, arctic: 4, militia: 2 }, elite: 0.08 },
 ];
 const BOSSES = [
-  { t: 300, key: 'arctic', name: 'DER RIESE', hp: 4500, scale: 2.4, speed: 115, dmg: 22, kind: 'riese' },
-  { t: 600, key: 'militia', name: 'DER BOMBENLEGER', hp: 8000, scale: 2.2, speed: 130, dmg: 18, kind: 'bomber' },
+  { t: 300, key: 'arctic', name: 'DER RIESE', hp: 9000, scale: 2.4, speed: 115, dmg: 22, kind: 'riese' },
+  { t: 600, key: 'militia', name: 'DER BOMBENLEGER', hp: 22000, scale: 2.2, speed: 130, dmg: 18, kind: 'bomber' },
 ];
 const DEATHS = ['death1', 'death2', 'death3', 'head', 'gutshot', 'back', 'forward'];
 const ALIVE = 0, DYING = 1;
@@ -1221,12 +1242,12 @@ function spawnEnemy(key, node, opt = {}) {
   if (node < 0) return null;
   const T = ENEMY_TYPES[key], m = modelByKey(key), p = player;
   const x = NAV.x[node], y = NAV.y[node], z = NAV.z[node];
-  const hpMul = 1 + minutes() * 0.16;
+  const m0 = minutes(), hpMul = 0.8 + 0.1 * m0 + 0.022 * m0 * m0;   // leichter Start, steiles Ende
   const elite = !!opt.elite, boss = opt.boss || null;
   const hp = boss ? boss.hp : T.hp * hpMul * (elite ? 4 : 1);
   const e = { id: ++game.idc, m, key, x, y, z, node, yaw: Math.atan2(p.o[1] - y, p.o[0] - x), hp, maxHp: hp,
     speed: boss ? boss.speed : T.speed * (0.92 + Math.random() * 0.16) * (elite ? 0.9 : 1),
-    xp: boss ? 40 : T.xp * (elite ? 6 : 1), dmg: boss ? boss.dmg : T.dmg * (elite ? 1.5 : 1),
+    xp: boss ? 40 : T.xp * (elite ? 6 : 1), dmg: (boss ? boss.dmg : T.dmg * (elite ? 1.5 : 1)) * (1 + 0.07 * m0),
     scale: boss ? boss.scale : elite ? 1.35 : 1, elite, boss, shooter: !!T.shooter && !boss, bomber: !!T.bomber && !boss,
     tint: boss ? [1.15, 1.0, 0.95] : elite ? [1.5, 0.75, 0.65] : [1, 1, 1],
     state: ALIVE, t: 0, seq: m.seq.run, f: Math.random() * 30, flash: 0, atk: 0.5, sink: 0, light: [1, 1, 1],
@@ -1251,7 +1272,7 @@ function updateDirector(dt) {
   let budget = 3;
   while (game.spawnAcc >= 1 && alive + (3 - budget) < W.max && budget-- > 0) {
     game.spawnAcc -= 1;
-    const eliteChance = minutes() > 2 ? 0.012 + minutes() * 0.003 + (W.elite || 0) : 0;
+    const eliteChance = minutes() > 2 ? 0.015 + minutes() * 0.004 + (W.elite || 0) : 0;
     spawnEnemy(pickWeighted(W.mix), spawnNode(), { elite: Math.random() < eliteChance });
   }
   // Bosse
@@ -1279,7 +1300,9 @@ function updateEnemies(dt) {
     e.losT -= dt;
     if ((e.shooter || e.boss) && e.losT <= 0) { e.losT = 0.3 + Math.random() * 0.1; e.los = d < 1100 && trace([e.x, e.y, e.z + 56 * e.scale], eye, 0).fraction > 0.99; }
     let mode = 'run';
+    if (e.stun > 0) e.stun -= dt;
     if (game.over) mode = 'idle';
+    else if (e.stun > 0) mode = 'stun';
     else if (e.bomber && (e.fuse >= 0 || (d < 85 && sameLevel))) mode = 'fuse';
     else if (sameLevel && d < reach) mode = 'attack';
     else if (e.shooter && e.los && d < 560 && d > 160) mode = 'shoot';
@@ -1299,8 +1322,9 @@ function updateEnemies(dt) {
       e.fuse -= dt; e.flash = (Math.floor(e.fuse * 12) % 2) ? 0.9 : 0;
       setSeq(e, 'idle1'); e.f += dt * 15;
       if (e.fuse <= 0) { explode([e.x, e.y, e.z + 30], 150, 250, 22, null); damageEnemy(e, 1e9, false, null); continue; }
-    } else if (mode === 'idle') {
+    } else if (mode === 'idle' || mode === 'stun') {
       setSeq(e, 'idle1'); e.f += dt * 15;
+      if (mode === 'stun') e.flash = Math.max(e.flash, 0.35);
     } else {
       e.atk = Math.max(e.atk, 0.35);
       let tx = p.o[0], ty = p.o[1];
@@ -1312,8 +1336,9 @@ function updateEnemies(dt) {
       const vx = tx - e.x, vy = ty - e.y, vl = Math.hypot(vx, vy) || 1;
       mvx = vx / vl; mvy = vy / vl;
       const s = setSeq(e, 'run');
-      e.f += dt * e.m.seqs[s].fps * (e.speed / e.m.seqs[s].speed / e.scale);
-      const sx = e.x + mvx * e.speed * dt, sy = e.y + mvy * e.speed * dt;
+      const spd = e.speed * (e.slow || 1);
+      e.f += dt * e.m.seqs[s].fps * (spd / e.m.seqs[s].speed / e.scale);
+      const sx = e.x + mvx * spd * dt, sy = e.y + mvy * spd * dt;
       if (!enemyStep(e, sx, sy) && !enemyStep(e, sx, e.y)) enemyStep(e, e.x, sy);
     }
     if (e.boss) bossAbilities(e, dt, d);
@@ -1400,11 +1425,11 @@ function updateShots(dt) {
   eShots = eShots.filter(s => !s.dead);
 }
 
-function damageEnemy(e, dmg, head, w) {
+function damageEnemy(e, dmg, head, w, quiet) {
   if (e.state !== ALIVE) return false;
   const real = Math.min(dmg, e.hp);
   if (w) w.dmg += real;
-  e.hp -= dmg; e.flash = 1;
+  e.hp -= dmg; if (!quiet) e.flash = 1;
   if (e.hp > 0) return false;
   e.state = DYING; e.t = 0; e.f = 0; e.fuse = -1;
   e.seq = e.m.seq[head ? 'head' : DEATHS[(Math.random() * DEATHS.length) | 0]];
@@ -1442,7 +1467,7 @@ function explode(pos, radius, enemyDmg, playerDmg, w) {
 // =====================================================================
 // Geld (= Erfahrung), Pickups und Waffenkisten
 // =====================================================================
-const xpNeed = L => Math.round(5 + (L - 1) * 8 + Math.pow(L - 1, 1.65));
+const xpNeed = L => Math.round(4 + (L - 1) * 6 + Math.pow(L - 1, 1.9));
 function dropLoot(e) {
   const z = (e.node >= 0 ? NAV.z[e.node] : e.z) + 2;
   let v = e.xp;
@@ -1489,9 +1514,9 @@ function collect(d) {
 // =====================================================================
 // Waffen und Ausruestung
 // =====================================================================
-// ups: Stufe 2..8; 'int' und 'reload' werden multipliziert, alles andere addiert
+// ups: Stufe 2..8; 'int', 'reload' und 'fuse' werden multipliziert, alles andere addiert
 const WDEF = {
-  usp: { name: 'USP-45', icon: 'usp', kind: 'single', base: { dmg: 34, int: 0.17, mag: 12, reload: 2.2, range: 1500, pierce: 0, hs: 0.14 },
+  usp: { name: 'USP-45', icon: 'usp', kind: 'single', base: { dmg: 34, int: 0.17, mag: 12, reload: 1.8, range: 1500, pierce: 0, hs: 0.14 },
     ups: [['dmg', 10, '+10 Schaden'], ['int', 0.85, 'feuert 15 % schneller'], ['mag', 6, '+6 Schuss im Magazin'], ['dmg', 12, '+12 Schaden'], ['pierce', 1, 'durchschlägt 1 Gegner'], ['int', 0.85, 'feuert 15 % schneller'], ['hs', 0.12, '+12 % Headshot-Chance']] },
   knife: { name: 'Messer', icon: 'knife', kind: 'melee', base: { dmg: 40, int: 0.7, range: 76 },
     ups: [['dmg', 15, '+15 Schaden'], ['range', 16, 'größere Reichweite'], ['int', 0.85, 'schneidet 15 % schneller'], ['dmg', 20, '+20 Schaden'], ['range', 20, 'größere Reichweite'], ['int', 0.8, 'schneidet 20 % schneller'], ['dmg', 35, '+35 Schaden']] },
@@ -1505,13 +1530,27 @@ const WDEF = {
     ups: [['pellets', 2, '+2 Schrotkugeln'], ['dmg', 5, '+5 Schaden pro Kugel'], ['cone', 0.08, 'breiterer Streukegel'], ['int', 0.85, 'feuert 15 % schneller'], ['pellets', 3, '+3 Schrotkugeln'], ['knock', 50, 'stößt weiter zurück'], ['dmg', 8, '+8 Schaden pro Kugel']] },
   ak47: { name: 'AK-47', icon: 'ak47', kind: 'single', base: { dmg: 36, int: 0.1, mag: 30, reload: 2.5, range: 1900, pierce: 0, hs: 0.1 },
     ups: [['dmg', 8, '+8 Schaden'], ['int', 0.88, 'feuert 12 % schneller'], ['mag', 10, '+10 Schuss im Magazin'], ['dmg', 10, '+10 Schaden'], ['pierce', 1, 'durchschlägt 1 Gegner'], ['int', 0.88, 'feuert 12 % schneller'], ['dmg', 16, '+16 Schaden']] },
+  awp: { name: 'AWP', icon: 'awp', kind: 'single', base: { dmg: 380, int: 1.5, mag: 5, reload: 3.0, range: 3200, pierce: 99, hs: 0.25 },
+    ups: [['dmg', 150, '+150 Schaden'], ['int', 0.85, 'feuert 15 % schneller'], ['mag', 3, '+3 Schuss im Magazin'], ['dmg', 200, '+200 Schaden'], ['reload', 0.7, 'lädt 30 % schneller nach'], ['int', 0.8, 'feuert 20 % schneller'], ['dmg', 300, '+300 Schaden']] },
+  m249: { name: 'M249', icon: 'm249', kind: 'spray', base: { dmg: 22, int: 0.07, mag: 100, reload: 4.5, range: 1300, pierce: 0, hs: 0.05 },
+    ups: [['dmg', 5, '+5 Schaden'], ['mag', 50, '+50 Schuss im Gurt'], ['int', 0.88, 'feuert 12 % schneller'], ['dmg', 7, '+7 Schaden'], ['reload', 0.65, 'lädt 35 % schneller nach'], ['pierce', 1, 'durchschlägt 1 Gegner'], ['dmg', 10, '+10 Schaden']] },
+  elites: { name: 'Dual Elites', icon: 'elites', kind: 'sides', base: { dmg: 28, int: 0.4, mag: 30, reload: 2.6, range: 1000, hs: 0.1, dirs: 2 },
+    ups: [['dmg', 8, '+8 Schaden'], ['int', 0.85, 'feuert 15 % schneller'], ['mag', 10, '+10 Schuss im Magazin'], ['dmg', 10, '+10 Schaden'], ['range', 300, 'größere Reichweite'], ['int', 0.85, 'feuert 15 % schneller'], ['dmg', 14, '+14 Schaden']] },
   he: { name: 'HE-Granate', icon: 'he', kind: 'grenade', base: { dmg: 120, int: 3.4, radius: 160, count: 1, range: 900 },
     ups: [['dmg', 40, '+40 Schaden'], ['radius', 30, 'größerer Explosionsradius'], ['int', 0.85, 'wirft 15 % öfter'], ['count', 1, '+1 Granate pro Wurf'], ['dmg', 60, '+60 Schaden'], ['radius', 40, 'größerer Explosionsradius'], ['count', 1, '+1 Granate pro Wurf']] },
+  flash: { name: 'Flashbang', icon: 'flash', kind: 'flash', base: { dmg: 15, int: 6, radius: 220, stun: 2.5, count: 1, range: 900 },
+    ups: [['radius', 40, 'größerer Radius'], ['stun', 0.8, 'blendet 0,8 s länger'], ['int', 0.85, 'wirft 15 % öfter'], ['dmg', 25, '+25 Schaden'], ['radius', 50, 'größerer Radius'], ['stun', 1, 'blendet 1 s länger'], ['int', 0.8, 'wirft 20 % öfter']] },
+  smoke: { name: 'Rauchgranate', icon: 'smoke', kind: 'smoke', base: { dmg: 22, int: 8, radius: 170, dur: 6, slow: 0.5, count: 1, range: 900 },
+    ups: [['radius', 30, 'größere Wolke'], ['dmg', 12, '+12 Schaden pro Sekunde'], ['dur', 2, 'hält 2 s länger'], ['int', 0.85, 'wirft 15 % öfter'], ['dmg', 18, '+18 Schaden pro Sekunde'], ['radius', 40, 'größere Wolke'], ['slow', 0.15, 'bremst stärker']] },
+  c4: { name: 'C4', icon: 'c4', kind: 'c4', base: { dmg: 240, int: 5, radius: 200, fuse: 2.5, count: 1 },
+    ups: [['dmg', 80, '+80 Schaden'], ['radius', 40, 'größerer Radius'], ['int', 0.85, 'legt 15 % öfter'], ['dmg', 120, '+120 Schaden'], ['fuse', 0.7, 'zündet schneller'], ['radius', 50, 'größerer Radius'], ['dmg', 160, '+160 Schaden']] },
 };
 const WDESC = { usp: 'Einzelschüsse aufs fadenkreuznächste Ziel', knife: 'Schneidet alles in Reichweite, auch hinter dir',
   glock: 'Salven auf mehrere Ziele, kurze Reichweite', deagle: 'Harte Schüsse, durchschlägt Gegner in einer Linie',
   mp5: 'Dauerfeuer, mittlere Reichweite', m3: 'Schrotkegel, stößt Gegner zurück', ak47: 'Starkes Dauerfeuer, lange Reichweite',
-  he: 'Fliegt in die dichteste Gruppe in Sicht' };
+  awp: 'Langsam, riesiger Schaden, durchschlägt alle Gegner in der Linie', m249: 'Gurtfeuer, verteilt Kugeln auf viele Ziele',
+  elites: 'Feuert gleichzeitig nach links und rechts', he: 'Fliegt in die dichteste Gruppe in Sicht',
+  flash: 'Gegner im Umkreis erstarren', smoke: 'Wolke bremst Gegner und verletzt sie', c4: 'Legt Bomben an deinen Füßen' };
 const PDEF = {
   kevlar: { name: 'Kevlar', icon: 'kevlar', desc: '8 % weniger Schaden' },
   helm: { name: 'Helm', icon: 'helm', desc: '+20 max. HP (heilt 20)' },
@@ -1519,34 +1558,80 @@ const PDEF = {
   reload: { name: 'Schnellladen', icon: 'shell', desc: '8 % kürzere Nachlade- und Abklingzeiten' },
   hollow: { name: 'Hohlspitz-Munition', icon: 'bullet', desc: '+10 % Schaden aller Waffen' },
   kit: { name: 'Defuse-Kit', icon: 'defuser', desc: '+30 % Sammelradius für Geld' },
+  hstrain: { name: 'Headshot-Training', icon: 'hstrain', desc: '+6 % Headshot-Chance' },
+  nv: { name: 'Nachtsicht', icon: 'nightvision', desc: '+15 % Reichweite, +8 % Explosionsradius' },
+  magext: { name: 'Magazinerweiterung', icon: 'cartridge', desc: '+20 % Magazin, mehr Projektile' },
+};
+// Evolution: Waffe auf Stufe 8 + passende Ausruestung -> naechste Waffenkiste
+const EVOS = {
+  usp: { p: 'reload', name: 'Schalldämpfer-USP', desc: 'durchschlägt 3 Gegner, 30 % schneller' },
+  glock: { p: 'magext', name: 'Akimbo-Glock', desc: 'doppelte Salven' },
+  knife: { p: 'shoes', name: 'Messerwirbel', desc: 'kreisende Klingen, größere Reichweite' },
+  deagle: { p: 'hstrain', name: 'One-Deag', desc: 'jeder Treffer ein Headshot' },
+  mp5: { p: 'reload', name: 'P90-Sturm', desc: 'fast doppelte Feuerrate, doppeltes Magazin' },
+  m3: { p: 'kevlar', name: 'XM1014', desc: 'vollautomatische Schrotflinte' },
+  ak47: { p: 'magext', name: 'Goldene AK', desc: '+60 % Schaden, Trommelmagazin, durchschlägt 2' },
+  awp: { p: 'nv', name: 'Wallbang-AWP', desc: 'schießt durch Wände' },
+  m249: { p: 'hollow', name: 'Dauerfeuer', desc: 'nie mehr nachladen, +30 % Schaden' },
+  elites: { p: 'magext', name: 'Kugelhagel', desc: 'feuert in alle 4 Richtungen' },
+  he: { p: 'hollow', name: 'Clusterbombe', desc: 'jede Explosion zerfällt in 4 kleine' },
+  flash: { p: 'nv', name: 'Dauerblender', desc: 'blendet ständig alles um dich herum' },
+  smoke: { p: 'helm', name: 'Giftnebel', desc: 'giftige Wolke folgt dir' },
+  c4: { p: 'kit', name: 'Bombenteppich', desc: 'legt 3 Bomben im Kreis' },
 };
 const W_MAX = 8, P_MAX = 5, SLOTS = 6;
 
-function weaponStats(id, lvl) {
+function weaponStats(id, lvl, evo) {
   const D = WDEF[id], s = Object.assign({}, D.base);
   for (let i = 0; i < lvl - 1 && i < D.ups.length; i++) {
     const [k, v] = D.ups[i];
-    if (k === 'int' || k === 'reload') s[k] *= v; else s[k] = (s[k] || 0) + v;
+    if (k === 'int' || k === 'reload' || k === 'fuse') s[k] *= v; else s[k] = (s[k] || 0) + v;
+  }
+  if (evo) {
+    if (id === 'usp') { s.pierce += 3; s.int *= 0.7; s.dmg *= 1.3; }
+    if (id === 'glock') { s.burst *= 2; s.int *= 0.75; }
+    if (id === 'knife') { s.int = 0.22; s.range *= 1.4; }
+    if (id === 'deagle') { s.hs = 1; s.dmg *= 1.2; }
+    if (id === 'mp5') { s.int *= 0.55; s.mag *= 2; }
+    if (id === 'm3') { s.int *= 0.4; s.mag *= 2; s.pellets += 4; }
+    if (id === 'ak47') { s.dmg *= 1.6; s.pierce += 2; s.mag = Math.max(s.mag, 100); }
+    if (id === 'awp') s.wallbang = true;
+    if (id === 'm249') { s.noReload = true; s.dmg *= 1.3; }
+    if (id === 'elites') s.dirs = 4;
+    if (id === 'he') s.cluster = true;
+    if (id === 'flash') s.aura = true;
+    if (id === 'smoke') s.follow = true;
+    if (id === 'c4') s.count = Math.max(s.count, 3);
   }
   const P = game.passives;
   s.dmg *= 1 + 0.1 * (P.hollow || 0);
   s.int *= 1 - 0.08 * (P.reload || 0);
   if (s.reload) s.reload *= 1 - 0.08 * (P.reload || 0);
+  if (s.hs !== undefined) s.hs += 0.06 * (P.hstrain || 0);
+  if (s.range) s.range *= 1 + 0.15 * (P.nv || 0);
+  if (s.radius) s.radius *= 1 + 0.08 * (P.nv || 0);
+  const mx = P.magext || 0;
+  if (s.mag) s.mag = Math.round(s.mag * (1 + 0.2 * mx));
+  s.extra = D.kind === 'single' || D.kind === 'spray' ? Math.floor(mx / 2) : 0;
+  if (s.burst) s.burst += mx;
+  if (s.pellets) s.pellets += 2 * mx;
+  if (s.count) s.count += Math.floor(mx / 3);
   return s;
 }
 function addWeapon(id) {
-  const w = { id, lvl: 1, cd: 0.3, reload: 0, dmg: 0, kills: 0, burst: 0, burstT: 0 };
-  w.st = weaponStats(id, 1); w.mag = w.st.mag || 0;
+  const w = { id, lvl: 1, evo: false, cd: 0.3, reload: 0, dmg: 0, kills: 0, burst: 0, burstT: 0, auraT: 0 };
+  w.st = weaponStats(id, 1, false); w.mag = w.st.mag || 0;
   game.weapons.push(w);
   return w;
 }
 function refreshStats() {
-  for (const w of game.weapons) { const old = w.st; w.st = weaponStats(w.id, w.lvl); if (old && w.st.mag > old.mag) w.mag += w.st.mag - old.mag; }
+  for (const w of game.weapons) { const old = w.st; w.st = weaponStats(w.id, w.lvl, w.evo); if (old && w.st.mag > old.mag) w.mag += w.st.mag - old.mag; }
   MOVE.maxspeed = 250 * (1 + 0.08 * (game.passives.shoes || 0));
   const mh = 100 + 20 * (game.passives.helm || 0);
   if (mh > game.maxHp) game.hp += mh - game.maxHp;
   game.maxHp = mh;
 }
+const evoReady = w => !w.evo && EVOS[w.id] && w.lvl >= W_MAX && (game.passives[EVOS[w.id].p] || 0) > 0;
 
 // Angebote fuer das Kaufmenue: Aufwertungen und neue Waffen/Ausruestung
 function makeOffers(n = 3) {
@@ -1564,20 +1649,27 @@ function makeOffers(n = 3) {
 function applyOffer(o) {
   if (o.type === 'w') { const w = game.weapons.find(x => x.id === o.id); if (w) w.lvl = o.lvl; else addWeapon(o.id); }
   else if (o.type === 'p') game.passives[o.id] = o.lvl;
+  else if (o.type === 'evo') { const w = game.weapons.find(x => x.id === o.id); if (w) w.evo = true; }
   else { game.hp = Math.min(game.maxHp, game.hp + 30); game.money += 1000; }
   refreshStats();
 }
 function offerText(o) {
   if (o.type === 'cash') return { icon: 'briefcase', name: 'Geldkoffer', tag: '', desc: '+30 HP und $1.000' };
+  if (o.type === 'evo') return { icon: WDEF[o.id].icon, name: EVOS[o.id].name, tag: 'EVOLUTION', desc: EVOS[o.id].desc };
   if (o.type === 'w') {
     const D = WDEF[o.id];
-    return { icon: D.icon, name: D.name, tag: o.lvl === 1 ? 'NEU' : 'Stufe ' + o.lvl, desc: o.lvl === 1 ? WDESC[o.id] : D.ups[o.lvl - 2][2] };
+    let desc = o.lvl === 1 ? WDESC[o.id] : D.ups[o.lvl - 2][2];
+    if (o.lvl === W_MAX && EVOS[o.id]) desc += ` · danach Evolution mit ${PDEF[EVOS[o.id].p].name}`;
+    return { icon: D.icon, name: D.name, tag: o.lvl === 1 ? 'NEU' : 'Stufe ' + o.lvl, desc };
   }
   const D = PDEF[o.id];
   return { icon: D.icon, name: D.name, tag: o.lvl === 1 ? 'NEU' : 'Stufe ' + o.lvl, desc: D.desc };
 }
+// Waffenkiste: zuerst eine moegliche Evolution, sonst Aufwertungen
 function openChest(count) {
   const got = [];
+  const evo = game.weapons.find(evoReady);
+  if (evo) { applyOffer({ type: 'evo', id: evo.id }); got.push('EVOLUTION ' + EVOS[evo.id].name); count--; }
   for (let i = 0; i < count; i++) { const o = makeOffers(1)[0]; applyOffer(o); got.push(offerText(o).name + (o.lvl ? ' ' + o.lvl : '')); }
   toast('Waffenkiste: ' + got.join(', '));
 }
@@ -1629,10 +1721,12 @@ function visibleTargets(range, n) {
 }
 
 // ---------------------------------------------------------------- Schiessen
-function hitscan(w, c, dmg, headChance) {
+function hitscan(w, c, dmg, headChance, wallbang) {
   const e = c.e, head = Math.random() < headChance;
   const hz = e.z + (head ? 62 : 40 + Math.random() * 14) * e.scale;
-  fx.push({ type: 'tracer', a: gunPos(), b: [e.x, e.y, hz], t: 0, life: 0.07 });
+  const awp = w && w.id === 'awp', g0 = gunPos();
+  const from = awp ? [g0[0] + (e.x - g0[0]) * 0.06, g0[1] + (e.y - g0[1]) * 0.06, g0[2] + (hz - g0[2]) * 0.06] : g0;
+  fx.push({ type: 'tracer', a: from, b: [e.x, e.y, hz], t: 0, life: awp ? 0.18 : 0.07, wide: awp });
   for (let k = 0; k < (head ? 9 : 4); k++) fx.push({ type: 'blood', p: [e.x, e.y, hz], v: [(Math.random() - .5) * 140, (Math.random() - .5) * 140, 30 + Math.random() * 110], t: 0, life: .3 + Math.random() * .25, s: 1.2 + Math.random() * 1.8 });
   if (head && !e.boss) headshotPing();
   damageEnemy(e, head ? dmg * (e.boss ? 2 : 4) : dmg, head && !e.boss, w);
@@ -1643,7 +1737,7 @@ function pierceLine(w, c, count, dmg) {
   const eye = eyePos(), e0 = c.e;
   const dir = [e0.x - eye[0], e0.y - eye[1], c.tz - eye[2]], l = Math.hypot(...dir);
   dir[0] /= l; dir[1] /= l; dir[2] /= l;
-  const wall = trace(eye, [eye[0] + dir[0] * w.st.range, eye[1] + dir[1] * w.st.range, eye[2] + dir[2] * w.st.range], 0).fraction * w.st.range;
+  const wall = w.st.wallbang ? w.st.range : trace(eye, [eye[0] + dir[0] * w.st.range, eye[1] + dir[1] * w.st.range, eye[2] + dir[2] * w.st.range], 0).fraction * w.st.range;
   const hits = [];
   for (const e of enemies) {
     if (e.state !== ALIVE || e === e0) continue;
@@ -1657,36 +1751,87 @@ function pierceLine(w, c, count, dmg) {
   for (const [, e] of hits.slice(0, count)) damageEnemy(e, dmg * 0.8, false, w);
 }
 let shotThisFrame = false;
+let zones = [], delayed = [];
+// Schuss auf c plus Durchschlag; extra: weitere sichtbare Ziele (Magazinerweiterung)
+function gunShot(w, c, list) {
+  const S = w.st;
+  hitscan(w, c, S.dmg, S.hs, S.wallbang);
+  pierceLine(w, c, S.pierce, S.dmg);
+  for (let k = 0; k < S.extra && list; k++) { const o = list[k + 1]; if (o) hitscan(w, o, S.dmg, S.hs, S.wallbang); }
+}
+// alle Gegner im Sichtfeld, ohne Sichtpruefung (Wallbang)
+function fovTargets(range) { return targets().filter(c => c.d <= range && c.e.state === ALIVE); }
+function densest(list, radius) {
+  return list.map(c => [enemies.reduce((n, e) => n + (e.state === ALIVE && Math.hypot(e.x - c.e.x, e.y - c.e.y) < radius ? 1 : 0), 0), c]).sort((a, b) => b[0] - a[0]).map(x => x[1]);
+}
+const floorAt = e => (e.node >= 0 ? NAV.z[e.node] : e.z) + 4;
+function throwAt(w, kind, list, radius) {
+  const S = w.st, T = densest(list, radius);
+  for (let k = 0; k < Math.round(S.count || 1) && k < T.length; k++) {
+    const c = T[k];
+    nades.push({ from: gunPos(), to: [c.e.x, c.e.y, floorAt(c.e)], t: 0, dur: 0.55, w, kind });
+  }
+}
+function nearestInDir(dirYaw, range) {
+  const p = player, eye = eyePos(), cand = [];
+  for (const e of enemies) {
+    if (e.state !== ALIVE) continue;
+    const dx = e.x - p.o[0], dy = e.y - p.o[1], d = Math.hypot(dx, dy);
+    if (d > range || d < 1) continue;
+    const da = Math.abs(((Math.atan2(dy, dx) - dirYaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+    if (da < 0.9) cand.push([d, e]);
+  }
+  cand.sort((a, b) => a[0] - b[0]);
+  for (let i = 0; i < Math.min(3, cand.length); i++) {
+    const e = cand[i][1], tz = e.z + 48 * e.scale;
+    if (trace(eye, [e.x, e.y, tz], 0).fraction > 0.995) return { e, d: cand[i][0], tz };
+  }
+  return null;
+}
+
 function updateWeapons(dt) {
   if (game.over) return;
   shotThisFrame = false;
+  const p = player, feet = p.o[2] - 36;
   for (const w of game.weapons) {
-    const S = w.st;
+    const S = w.st, D = WDEF[w.id];
     w.cd -= dt;
     if (w.reload > 0) { w.reload -= dt; if (w.reload <= 0) w.mag = S.mag; continue; }
-    const D = WDEF[w.id];
+    const useAmmo = () => { if (S.noReload) return; w.mag--; if (w.mag <= 0) w.reload = S.reload; };
     if (D.kind === 'single' && w.cd <= 0) {
-      const [c] = visibleTargets(S.range, 1);
-      if (c) {
-        w.cd = S.int; w.mag--;
-        hitscan(w, c, S.dmg, S.hs); pierceLine(w, c, S.pierce, S.dmg);
-        shotThisFrame = true;
-        if (w.mag <= 0) w.reload = S.reload;
+      const list = S.wallbang ? fovTargets(S.range) : visibleTargets(S.range, 1 + S.extra);
+      if (list.length) { w.cd = S.int; gunShot(w, list[0], list); shotThisFrame = true; useAmmo(); }
+    } else if (D.kind === 'spray' && w.cd <= 0) {
+      const list = visibleTargets(S.range, 6);
+      if (list.length) {
+        w.cd = S.int; shotThisFrame = true;
+        const c = list[(Math.random() * list.length) | 0];
+        gunShot(w, c, null);
+        for (let k = 0; k < S.extra; k++) hitscan(w, list[(Math.random() * list.length) | 0], S.dmg, S.hs);
+        useAmmo();
       }
+    } else if (D.kind === 'sides' && w.cd <= 0) {
+      const offs = S.dirs >= 4 ? [Math.PI / 2, -Math.PI / 2, 0, Math.PI] : [Math.PI / 2, -Math.PI / 2];
+      let fired = false;
+      for (const o of offs) {
+        const c = nearestInDir(p.yaw + o, S.range);
+        if (c) { hitscan(w, c, S.dmg, S.hs); fired = true; }
+      }
+      if (fired) { w.cd = S.int; shotThisFrame = true; useAmmo(); }
     } else if (D.kind === 'burst') {
       if (w.burst > 0) {
         w.burstT -= dt;
         if (w.burstT <= 0) {
           const T = visibleTargets(S.range, 4);
           if (T.length) { hitscan(w, T[w.burst % T.length], S.dmg, S.hs); shotThisFrame = true; w.mag--; }
-          w.burst--; w.burstT = 0.06;
+          w.burst--; w.burstT = 0.05;
           if (w.mag <= 0) { w.reload = S.reload; w.burst = 0; }
         }
       } else if (w.cd <= 0 && visibleTargets(S.range, 1).length) { w.burst = Math.round(S.burst); w.burstT = 0; w.cd = S.int; }
     } else if (D.kind === 'shotgun' && w.cd <= 0) {
       const [c] = visibleTargets(S.range, 1);
       if (c) {
-        w.cd = S.int; w.mag--; shotThisFrame = true;
+        w.cd = S.int; shotThisFrame = true;
         const eye = eyePos(), a0 = Math.atan2(c.e.y - eye[1], c.e.x - eye[0]);
         const hits = enemies.filter(e => {
           if (e.state !== ALIVE) return false;
@@ -1694,7 +1839,7 @@ function updateWeapons(dt) {
           const da = Math.abs(((Math.atan2(e.y - eye[1], e.x - eye[0]) - a0 + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
           return d < S.range && da < S.cone / 2 + 14 / Math.max(d, 1);
         });
-        for (let k = 0; k < Math.round(S.pellets); k++) {
+        for (let k = 0; k < Math.min(14, Math.round(S.pellets)); k++) {
           const a = a0 + (Math.random() - 0.5) * S.cone, r = S.range * (0.4 + Math.random() * 0.6);
           fx.push({ type: 'tracer', a: gunPos(), b: [eye[0] + Math.cos(a) * r, eye[1] + Math.sin(a) * r, c.tz + (Math.random() - 0.5) * 30], t: 0, life: 0.06 });
         }
@@ -1704,44 +1849,87 @@ function updateWeapons(dt) {
           damageEnemy(e, S.dmg * share * (1 - 0.5 * d / S.range), false, w);
           if (e.state === ALIVE && !e.boss) { const k = S.knock / Math.max(d, 1); enemyStep(e, e.x + (e.x - eye[0]) * k, e.y + (e.y - eye[1]) * k); }
         }
-        if (w.mag <= 0) w.reload = S.reload;
+        useAmmo();
       }
     } else if (D.kind === 'melee' && w.cd <= 0) {
-      const p = player, feet = p.o[2] - 36;
       const near = enemies.filter(e => e.state === ALIVE && Math.abs(e.z - feet) < 48 * e.scale && Math.hypot(e.x - p.o[0], e.y - p.o[1]) < S.range + 16 * (e.scale - 1));
-      if (near.length) {
+      if (near.length || w.evo) {
         w.cd = S.int;
-        for (const e of near) damageEnemy(e, S.dmg, false, w);
-        fx.push({ type: 'slash', o: [p.o[0], p.o[1], p.o[2] + 2], a: p.yaw + Math.random() * 6.28, r: S.range, t: 0, life: 0.22 });
+        for (const e of near) damageEnemy(e, S.dmg, false, w, w.evo);
+        if (near.length || Math.random() < 0.3) fx.push({ type: 'slash', o: [p.o[0], p.o[1], p.o[2] + 2], a: p.yaw + Math.random() * 6.28, r: S.range, t: 0, life: w.evo ? 0.3 : 0.22 });
       }
-    } else if (D.kind === 'grenade' && w.cd <= 0) {
+    } else if ((D.kind === 'grenade' || D.kind === 'flash' || D.kind === 'smoke') && w.cd <= 0) {
       const T = visibleTargets(S.range, 8);
-      if (T.length) {
-        w.cd = S.int;
-        // dichteste Gruppen zuerst
-        const scored = T.map(c => [enemies.reduce((n, e) => n + (e.state === ALIVE && Math.hypot(e.x - c.e.x, e.y - c.e.y) < S.radius ? 1 : 0), 0), c]).sort((a, b) => b[0] - a[0]);
-        for (let k = 0; k < Math.round(S.count) && k < scored.length; k++) {
-          const c = scored[k][1];
-          nades.push({ from: gunPos(), to: [c.e.x, c.e.y, (c.e.node >= 0 ? NAV.z[c.e.node] : c.e.z) + 4], t: 0, dur: 0.55, w });
-        }
+      if (T.length) { w.cd = S.int; throwAt(w, D.kind, T, S.radius); }
+    } else if (D.kind === 'c4' && w.cd <= 0) {
+      w.cd = S.int;
+      const n = Math.round(S.count);
+      for (let k = 0; k < n; k++) {
+        let x = p.o[0], y = p.o[1];
+        if (n > 1) { const a = k / n * Math.PI * 2 + game.time; x += Math.cos(a) * 120; y += Math.sin(a) * 120; }
+        const node = navNodeAt(x, y, feet, 40);
+        if (node < 0 && k > 0) continue;
+        c4s.push({ p: [x, y, (node >= 0 ? NAV.z[node] : feet) + 3], t: 0, fuse: S.fuse, r: S.radius, dmg: S.dmg, pdmg: 0, w });
       }
+    }
+    // dauerhafte Effekte der Evolutionen
+    if (D.kind === 'flash' && S.aura) {
+      w.auraT -= dt;
+      if (w.auraT <= 0) {
+        w.auraT = 1.5;
+        for (const e of enemies) if (e.state === ALIVE && !e.boss && Math.hypot(e.x - p.o[0], e.y - p.o[1]) < 160) { e.stun = Math.max(e.stun || 0, 1.2); damageEnemy(e, S.dmg * 0.5, false, w, true); }
+        fx.push({ type: 'flashfx', p: [p.o[0], p.o[1], p.o[2]], r: 160, t: 0, life: 0.35, soft: true });
+      }
+    }
+    if (D.kind === 'smoke' && S.follow && !zones.some(z => z.follow)) {
+      zones.push({ p: [p.o[0], p.o[1], feet], r: S.radius, t: 0, dur: Infinity, w, follow: true, poison: true, seed: Math.random() * 100 });
     }
   }
   if (shotThisFrame) muzzleFlash();
 }
 
-function updateNades(dt) {
-  for (const n of nades) {
-    n.t += dt;
-    if (n.t >= n.dur && !n.landed) {
-      n.landed = true;
-      if (n.c4) c4s.push({ p: n.to, t: 0, fuse: 2.4 });
-      else explode(n.to, n.w.st.radius, n.w.st.dmg, 0, n.w);
+function landNade(n) {
+  const S = n.w ? n.w.st : null;
+  if (n.c4) c4s.push({ p: n.to, t: 0, fuse: 2.4, r: 190, dmg: 300, pdmg: 30, w: null });
+  else if (n.kind === 'flash') {
+    for (const e of enemies) {
+      if (e.state !== ALIVE) continue;
+      if (Math.hypot(e.x - n.to[0], e.y - n.to[1]) < S.radius) { e.stun = Math.max(e.stun || 0, e.boss ? S.stun * 0.3 : S.stun); damageEnemy(e, S.dmg, false, n.w); }
+    }
+    fx.push({ type: 'flashfx', p: n.to, r: S.radius, t: 0, life: 0.45 });
+  } else if (n.kind === 'smoke') {
+    zones.push({ p: n.to, r: S.radius, t: 0, dur: S.dur, w: n.w, seed: Math.random() * 100 });
+  } else {
+    explode(n.to, S.radius, S.dmg, 0, n.w);
+    if (S.cluster) for (let k = 0; k < 4; k++) {
+      const a = k * Math.PI / 2 + Math.random() * 0.6;
+      delayed.push({ t: 0.22 + k * 0.06, p: [n.to[0] + Math.cos(a) * S.radius * 0.6, n.to[1] + Math.sin(a) * S.radius * 0.6, n.to[2]], r: S.radius * 0.55, dmg: S.dmg * 0.5, w: n.w });
     }
   }
+}
+
+function updateNades(dt) {
+  for (const n of nades) { n.t += dt; if (n.t >= n.dur && !n.landed) { n.landed = true; landNade(n); } }
   nades = nades.filter(n => !n.landed);
-  for (const c of c4s) { c.t += dt; if (c.t >= c.fuse) { c.dead = true; explode([c.p[0], c.p[1], c.p[2] + 10], 190, 300, 30, null); } }
+  for (const c of c4s) { c.t += dt; if (c.t >= c.fuse) { c.dead = true; explode([c.p[0], c.p[1], c.p[2] + 10], c.r, c.dmg, c.pdmg, c.w); } }
   c4s = c4s.filter(c => !c.dead);
+  for (const d of delayed) { d.t -= dt; if (d.t <= 0) { d.dead = true; explode(d.p, d.r, d.dmg, 0, d.w); } }
+  delayed = delayed.filter(d => !d.dead);
+  // Rauch- und Giftwolken: bremsen und verletzen
+  for (const e of enemies) e.slow = 1;
+  for (const z of zones) {
+    z.t += dt;
+    if (z.follow) { z.p = [player.o[0], player.o[1], player.o[2] - 36]; z.r = z.w.st.radius; }
+    const S = z.w.st, dps = S.dmg * (z.poison ? 2.2 : 1);
+    for (const e of enemies) {
+      if (e.state !== ALIVE) continue;
+      if (Math.hypot(e.x - z.p[0], e.y - z.p[1]) < z.r && Math.abs(e.z - z.p[2]) < 80) {
+        e.slow = Math.min(e.slow, 1 - S.slow);
+        damageEnemy(e, dps * dt, false, z.w, true);
+      }
+    }
+  }
+  zones = zones.filter(z => z.t < z.dur && game.weapons.includes(z.w));
 }
 
 function updateFx(dt) { for (const f of fx) f.t += dt; fx = fx.filter(f => f.t < f.life); }
@@ -1848,6 +2036,10 @@ function refreshMenu() {
   $('#bhopBtn').classList.toggle('on', settings.autoBhop);
   $('#stats').style.display = settings.fps ? '' : 'none';
   refreshTestMenu();
+  $('#evoList').innerHTML = Object.entries(EVOS).map(([id, E]) => {
+    const w = game.weapons.find(x => x.id === id);
+    return `<div class="${w && w.evo ? 'done' : ''}"><b>${E.name}</b>${w && w.evo ? ' ★' : ''}<br>${iconImg(WDEF[id].icon)}${WDEF[id].name} + ${iconImg(PDEF[E.p].icon)}${PDEF[E.p].name}</div>`;
+  }).join('');
 }
 $('#sens').addEventListener('input', e => { settings.sens = +e.target.value; saveSettings(); refreshMenu(); });
 $('#resBtn').addEventListener('click', () => { settings.res = (settings.res + 1) % RESOLUTIONS.length; saveSettings(); refreshMenu(); });
@@ -2133,9 +2325,12 @@ function drawFx(VP, eye, yaw) {
     if (f.type === 'tracer') {
       const d = [f.b[0] - f.a[0], f.b[1] - f.a[1], f.b[2] - f.a[2]], c = [eye[0] - f.a[0], eye[1] - f.a[1], eye[2] - f.a[2]];
       let n = [d[1] * c[2] - d[2] * c[1], d[2] * c[0] - d[0] * c[2], d[0] * c[1] - d[1] * c[0]];
-      const l = Math.hypot(...n) || 1; n = n.map(v => v / l * 0.7);
+      const l = Math.hypot(...n) || 1; n = n.map(v => v / l * (f.wide ? 1.15 : 0.7));
       const A = f.a, B = f.b, a = .8 * k;
-      quad([A[0] - n[0], A[1] - n[1], A[2] - n[2]], [B[0] - n[0], B[1] - n[1], B[2] - n[2]], [B[0] + n[0], B[1] + n[1], B[2] + n[2]], [A[0] + n[0], A[1] + n[1], A[2] + n[2]], [1, .92, .55, a], [1, .8, .35, a * .35]);
+      quad([A[0] - n[0], A[1] - n[1], A[2] - n[2]], [B[0] - n[0], B[1] - n[1], B[2] - n[2]], [B[0] + n[0], B[1] + n[1], B[2] + n[2]], [A[0] + n[0], A[1] + n[1], A[2] + n[2]], f.wide ? [.85, .95, 1, a] : [1, .92, .55, a], f.wide ? [.7, .85, 1, a * .5] : [1, .8, .35, a * .35]);
+    } else if (f.type === 'flashfx') {
+      const t = f.t / f.life;
+      ball(f.p[0], f.p[1], f.p[2] + (f.soft ? 10 : 40), f.r * (f.soft ? 0.9 : 0.6) * Math.sqrt(t), [1, 1, 1, (f.soft ? 0.35 : 0.9) * (1 - t)]);
     } else if (f.type === 'blood') {
       const t = f.t, s = f.s * (1 + t * 1.5);
       ball(f.p[0] + f.v[0] * t, f.p[1] + f.v[1] * t, f.p[2] + f.v[2] * t - 320 * t * t, s, [.38, .01, .01, .85 * k]);
@@ -2153,6 +2348,15 @@ function drawFx(VP, eye, yaw) {
       ball(P[0], P[1], P[2] + 10 + t * 30, fire * 1.15, [.35, .33, .3, .55 * (1 - t)]);
       ball(P[0], P[1], P[2] + 6, fire, [1, .62 - .3 * t, .18, .95 * Math.max(0, 1 - t * 1.6)]);
       ball(P[0], P[1], P[2] + 4, fire * .55, [1, .95, .7, Math.max(0, 1 - t * 3)]);
+    }
+  }
+  // Rauch- und Giftwolken als weiche Schwaden
+  for (const z of zones) {
+    const fade = Math.min(1, z.t / 0.5, (z.dur - z.t) / 1.2);
+    const col = z.poison ? [.42, .72, .28] : [.78, .78, .74];
+    for (let i = 0; i < 10; i++) {
+      const a = z.seed + i * 2.4 + z.t * (z.poison ? 0.8 : 0.15), d = z.r * (0.2 + 0.25 * (i % 3));
+      ball(z.p[0] + Math.cos(a) * d, z.p[1] + Math.sin(a) * d, z.p[2] + 28 + (i % 4) * 14 + Math.sin(z.t + i) * 4, z.r * 0.42, [...col, (z.poison ? 0.22 : 0.3) * fade]);
     }
   }
   for (const s of eShots) {
@@ -2268,10 +2472,10 @@ function updateHud(dt) {
     $('#boss').style.display = b ? 'block' : 'none';
     if (b) { $('#bossName').textContent = b.boss.name; $('#bossFill').style.width = Math.max(0, b.hp / b.maxHp * 100).toFixed(1) + '%'; }
   }
-  const bk = game.weapons.map(w => w.id + w.lvl).join() + '|' + Object.entries(game.passives).map(([k, v]) => k + v).join();
+  const bk = game.weapons.map(w => w.id + w.lvl + (w.evo ? 'e' : evoReady(w) ? 'r' : '')).join() + '|' + Object.entries(game.passives).map(([k, v]) => k + v).join();
   if (bk !== barCache) {
     barCache = bk;
-    $('#wbar').innerHTML = game.weapons.map(w => `<div class="slot">${iconImg(WDEF[w.id].icon)}<b>${w.lvl}</b></div>`).join('') +
+    $('#wbar').innerHTML = game.weapons.map(w => `<div class="slot${w.evo ? ' evo' : evoReady(w) ? ' ready' : ''}">${iconImg(WDEF[w.id].icon)}<b>${w.evo ? '★' : w.lvl}</b></div>`).join('') +
       '<div class="sep"></div>' + Object.entries(game.passives).filter(([, l]) => l > 0).map(([k, l]) => `<div class="slot small">${iconImg(PDEF[k].icon)}<b>${l}</b></div>`).join('');
   }
 }
@@ -2289,7 +2493,7 @@ function openBuy() {
     const t = offerText(o);
     const b = document.createElement('button');
     b.className = 'card';
-    b.innerHTML = `<span class="num">${i + 1}</span><div class="ic">${iconImg(t.icon)}</div><div class="nm">${t.name}</div><div class="tg${t.tag === 'NEU' ? ' new' : ''}">${t.tag}</div><div class="ds">${t.desc}</div>`;
+    b.innerHTML = `<span class="num">${i + 1}</span><div class="ic">${iconImg(t.icon)}</div><div class="nm">${t.name}</div><div class="tg${t.tag === 'NEU' ? ' new' : t.tag === 'EVOLUTION' ? ' evo' : ''}">${t.tag}</div><div class="ds">${t.desc}</div>`;
     b.addEventListener('click', () => pickOffer(o));
     box.appendChild(b);
   });
@@ -2326,7 +2530,7 @@ function endRound(won) {
   }, won ? 1800 : 1300);
 }
 function restartRound() {
-  enemies = []; drops = []; eShots = []; nades = []; c4s = []; fx = [];
+  enemies = []; drops = []; eShots = []; nades = []; c4s = []; fx = []; zones = []; delayed = [];
   Object.assign(game, { hp: 100, maxHp: 100, kills: 0, time: 0, over: false, won: false, spawnAcc: 0, flowT: 0, hurt: 0, deathT: 0,
     xp: 0, xpNext: xpNeed(1), level: 1, money: 0, pending: 0, weapons: [], passives: {}, bossIdx: 0, boss: null, shake: 0 });
   addWeapon('usp'); addWeapon('knife');
@@ -2405,7 +2609,7 @@ $('#restartBtn').addEventListener('click', () => { restartRound(); togglePause(f
   requestAnimationFrame(t => { last = t; frame(t); });
   // Test-Schnittstelle (fuer automatische Tests)
   window.__cs = { player, input, teleport, trace, SPOTS, WORLD, BSP, NAV, game, get enemies() { return enemies; }, settings,
-    get drops() { return drops; }, addXp, dbg: () => JSON.stringify({nades: nades.length, c4: c4s.length, shots: eShots.length, fx: fx.length}), start: () => sb.click(), setLight: v => LIGHT.splice(0, 3, ...v) };
+    get drops() { return drops; }, addXp, addWeapon, refreshStats, openChest, get zones() { return zones; }, dbg: () => JSON.stringify({nades: nades.length, c4: c4s.length, shots: eShots.length, fx: fx.length}), start: () => sb.click(), setLight: v => LIGHT.splice(0, 3, ...v) };
 })();
 </script>
 </body>
