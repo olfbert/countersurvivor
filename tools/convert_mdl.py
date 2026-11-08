@@ -295,6 +295,7 @@ def jpg_bytes(img, q=88):
 
 def main():
     models_dir, wad, out = sys.argv[1:4]
+    only = set(sys.argv[4].split(",")) if len(sys.argv) > 4 else None
     blobs = bytearray()
 
     def add(b):
@@ -307,6 +308,8 @@ def main():
 
     manifest = dict(models=[], seqs=[{"name": n, "label": l} for n, l in SEQS], floors={})
     for key, label, team in MODELS:
+        if only and key not in only:
+            continue
         path = glob.glob(os.path.join(models_dir, "**", key + ".mdl"), recursive=True)[0]
         m = MDL(path)
         # --- Mesh: Koerper (Bodypart 0, Submodell 0) + Zusatz (Bodypart 1, Submodell 1 = C4/Defuse)

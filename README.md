@@ -11,12 +11,15 @@ Ego-Shooter im Stil von Counter-Strike 1.6, der sich wie Vampire Survivors spiel
 
 | Version | Phase | Inhalt |
 | --- | --- | --- |
+| v0.2 | Phase 2 · Erste Horde | Terroristen (5 Modelle) mit Lauf-, Messer- und Todesanimationen, beleuchtet aus den Lightmaps; Wegnetz automatisch aus der Map (16er-Raster, Ebenen, Stufen) mit Flow-Field zum Spieler; Spawns außer Sicht; USP mit Autoshoot auf das fadenkreuznächste sichtbare Ziel (Magazin, Nachladen, Headshots); Messer rundum; Spielertod mit Todeskamera; Testmenü (Gegnerzahl, Unverwundbar) |
 | v0.1 | Phase 1 · de_dust begehbar | Map aus der BSP mit Original-Texturen, Lightmaps und Himmel; CS-Bewegung (250 u/s, Reibung, Beschleunigung, Stufen bis 18 Einheiten, Springen, Luftsteuerung); Kollision über die Clip-Hulls der Map; Touch-Steuerung; Teleport zu CT-Spawn, T-Spawn, Bombsite A/B |
 | – | Modelltest | 11 Spielermodelle mit GPU-Skinning und Instancing, 14 Animationen, bis 600 Gegner |
 
-Nächste Phase: **Phase 2 · Erste Horde** (Terroristen mit Wegfindung, Spawns, USP und Messer mit Autoshoot, Schaden, Tod).
+Nächste Phase: **Phase 3 · Survivors-Loop** (Geld-Drops, Level-Up als Kaufmenü, 8 Waffen und 6 Ausrüstungen, 15-Minuten-Wellen, 2 Bosse, Sieg und Niederlage).
 
 ## Steuerung
+
+Geschossen wird automatisch: Die USP trifft den sichtbaren Gegner, der dem Fadenkreuz am nächsten ist; das Messer schneidet alles in Reichweite, auch hinter dir.
 
 - **iPhone/iPad:** linker Daumen laufen (Joystick erscheint dort, wo du tippst), rechter Daumen umschauen, Knopf rechts unten springen, ☰ für Pause, Teleport und Einstellungen.
 - **PC:** WASD laufen, Maus schauen (Klick ins Bild fängt die Maus), Leertaste springen, Shift gehen, Esc Pause.
@@ -30,14 +33,15 @@ src/                  Vorlagen der Seiten (Code ohne Daten)
 tools/convert_mdl.py  GoldSrc-MDL -> kompaktes Modell-Paket (Mesh, Textur-Atlas, Animationen)
 tools/pack_map.py     BSP + WAD + Himmel -> Map-Paket (nur benutzte Texturen)
 tools/skymatch.py     ordnet Himmelsbilder per Kantenabgleich den Würfelseiten zu
-tools/build.py        setzt Paket (Base64) und Version in eine Vorlage ein
+tools/build.py        setzt Pakete (Base64) und Version in eine Vorlage ein
 ```
 
 Bauen (Pfade zu den eigenen Spieldateien anpassen):
 
 ```
 python3 tools/pack_map.py de_dust_cz.bsp czde_dust.wad himmel/ map.bin && gzip -9 -k map.bin
-python3 tools/build.py src/game.template.html map.bin.gz index.html 0.1
+python3 tools/convert_mdl.py models/ czde_dust.wad models.bin terror,leet,arctic,guerilla,militia && gzip -9 -k models.bin
+python3 tools/build.py src/game.template.html index.html 0.2 PACK=map.bin.gz MODELS=models.bin.gz
 ```
 
 Die BSP wird erst im Browser gelesen (Geometrie, Lightmaps, Kollision, Spawns, Bombsites). Weitere Maps sind damit später nur ein neues Datenpaket.

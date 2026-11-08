@@ -65,6 +65,22 @@
   .barwrap { width: 240px; height: 6px; border: 1px solid var(--line); margin: 12px auto 4px; }
   .barfill { height: 100%; width: 0; background: var(--hud); transition: width .15s; }
   #err { color: #ff7b6b; font: 12px/1.4 ui-monospace, Menlo, monospace; white-space: pre-wrap; text-align: left; }
+  #hp { position: absolute; left: max(16px, calc(env(safe-area-inset-left) + 8px)); bottom: max(12px, calc(env(safe-area-inset-bottom) + 4px));
+    font: bold 28px Tahoma, Verdana, sans-serif; color: var(--hud); text-shadow: 0 1px 3px #000; pointer-events: none; }
+  #hp span { font-size: 24px; margin-right: 6px; }
+  #hp.low { color: #ff5a3c; }
+  #ammo { position: absolute; right: max(18px, calc(env(safe-area-inset-right) + 10px)); bottom: max(12px, calc(env(safe-area-inset-bottom) + 4px));
+    font: bold 26px Tahoma, Verdana, sans-serif; color: var(--hud); text-shadow: 0 1px 3px #000; pointer-events: none; text-align: right; }
+  #ammo small { font-size: 14px; opacity: .8; }
+  .touch #ammo { right: max(118px, calc(env(safe-area-inset-right) + 110px)); }
+  #timer { position: absolute; top: max(10px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+    font: bold 20px Tahoma, Verdana, sans-serif; color: var(--hud); text-shadow: 0 1px 3px #000; pointer-events: none; }
+  #hurt { position: absolute; inset: 0; pointer-events: none; opacity: 0;
+    background: radial-gradient(ellipse at center, rgba(160, 0, 0, 0) 40%, rgba(180, 0, 0, .6) 100%); }
+  #muzzle { position: absolute; left: 62%; top: 66%; width: 70px; height: 70px; margin: -35px 0 0 -35px; border-radius: 50%; pointer-events: none; opacity: 0;
+    background: radial-gradient(circle, rgba(255, 236, 170, .95) 0, rgba(255, 170, 50, .55) 30%, rgba(255, 140, 30, 0) 70%); }
+  #hs { position: absolute; left: 50%; top: calc(50% + 22px); transform: translateX(-50%); font: bold 12px Tahoma, Verdana, sans-serif;
+    letter-spacing: .12em; color: #ff6a4a; text-shadow: 0 1px 2px #000; opacity: 0; transition: opacity .25s; pointer-events: none; }
   #portrait { position: absolute; left: 0; right: 0; bottom: 30%; text-align: center; font-size: 13px; color: var(--hud); display: none; pointer-events: none; text-shadow: 0 1px 3px #000; }
   @media (orientation: portrait) and (pointer: coarse) { #portrait { display: block; } }
 </style>
@@ -77,7 +93,12 @@
   <div id="cross"><i></i><i></i><i></i><i></i></div>
   <button id="menuBtn" aria-label="Menü">☰</button>
   <div id="stats"></div>
-  <div id="speedo"></div>
+  <div id="hurt"></div>
+  <div id="muzzle"></div>
+  <div id="timer">0:00</div>
+  <div id="hp"></div>
+  <div id="ammo"></div>
+  <div id="hs">HEADSHOT</div>
   <button id="jumpBtn">SPRUNG</button>
   <div id="toast"></div>
   <div id="portrait">Bitte das iPhone quer halten</div>
@@ -86,7 +107,7 @@
 <div class="overlay show" id="start">
   <div class="box">
     <h1>COUNTER-SURVIVORS</h1>
-    <p class="muted">Phase 1 · de_dust begehbar · v__VERSION__</p>
+    <p class="muted">Phase 2 · Erste Horde · v__VERSION__</p>
     <div class="barwrap"><div class="barfill" id="loadbar"></div></div>
     <p class="muted" id="loadtxt">Lade Map …</p>
     <div id="err"></div>
@@ -95,10 +116,18 @@
   </div>
 </div>
 
+<div class="overlay" id="dead">
+  <div class="box" style="text-align:center;min-width:260px">
+    <h1>GEFALLEN</h1>
+    <p id="deadStats"></p>
+    <button id="againBtn" class="on" style="min-width:160px;font-weight:bold;margin-top:8px">NOCHMAL</button>
+  </div>
+</div>
+
 <div class="overlay" id="menu">
   <div class="box">
     <h1>PAUSE</h1>
-    <p class="muted">Counter-Survivors · v__VERSION__ · Phase 1</p>
+    <p class="muted">Counter-Survivors · v__VERSION__ · Phase 2</p>
     <h2>Teleport</h2>
     <div class="grid" id="tpGrid"></div>
     <h2>Einstellungen</h2>
@@ -108,6 +137,11 @@
       <button id="fpsBtn"></button>
       <button id="bhopBtn"></button>
     </div>
+    <h2>Test</h2>
+    <div class="grid">
+      <button id="cntMinus">−</button><button id="cntLabel" style="min-width:150px"></button><button id="cntPlus">+</button>
+      <button id="godBtn"></button><button id="restartBtn">Runde neu</button>
+    </div>
     <h2>Steuerung</h2>
     <p class="muted" id="ctrlHint2"></p>
     <p class="muted">Map, Texturen und Himmel: Valve (Counter-Strike: Condition Zero) – nur für private Tests.</p>
@@ -116,10 +150,11 @@
 </div>
 
 <script id="pack" type="application/octet-stream">__PACK__</script>
+<script id="models" type="application/octet-stream">__MODELS__</script>
 <script>
 'use strict';
 // =====================================================================
-// Counter-Survivors · Phase 1: de_dust begehbar
+// Counter-Survivors · Phase 2: Erste Horde (Gegner, Wegnetz, Autoshoot)
 // BSP v30 wird zur Laufzeit gelesen: Geometrie, Lightmaps, Kollision, Entities.
 // Koordinaten wie in GoldSrc: Z zeigt nach oben, 1 Einheit ~ 1 Zoll.
 // =====================================================================
@@ -139,11 +174,12 @@ const aniso = gl.getExtension('EXT_texture_filter_anisotropic');
 
 // ---------------------------------------------------------------- Einstellungen (lokal, optional)
 const SETTINGS_KEY = 'countersurvivors.settings.v1';
-const settings = Object.assign({ sens: 1, res: 1, fps: true, autoBhop: false }, (() => {
+const settings = Object.assign({ sens: 1, res: 1, fps: true, autoBhop: false, enemies: 2 }, (() => {
   try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}; } catch (e) { return {}; }
 })());
 const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* egal */ } };
 const RESOLUTIONS = [1, 0.75, 0.5];
+const ENEMY_COUNTS = [10, 20, 40, 60, 100, 150, 200, 300];
 
 // ---------------------------------------------------------------- Mathe
 const M4 = {
@@ -224,8 +260,8 @@ in vec2 vUV; uniform sampler2D uTex; out vec4 o;
 void main() { o = vec4(texture(uTex, vUV).rgb, 1.0); }`);
 
 // ---------------------------------------------------------------- Paket laden
-async function loadPack() {
-  const b64 = $('#pack').textContent.trim();
+async function loadPack(id) {
+  const b64 = $('#' + id).textContent.trim();
   const bin = atob(b64), raw = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) raw[i] = bin.charCodeAt(i);
   const buf = raw[0] === 0x1f && raw[1] === 0x8b
@@ -561,8 +597,8 @@ function traceModel(model, origin, hull, start, end) {
 // Trace gegen Welt + feste Brush-Entities; liefert den naechsten Treffer
 function trace(start, end, hull = 1) {
   let best = traceModel(BSP.models[0], [0, 0, 0], hull, start, end);
-  if (hull === 0 || SOLIDS.length === 0) return best;
-  const mn = HULL_MINS[hull], mx = HULL_MAXS[hull];
+  if (SOLIDS.length === 0) return best;
+  const mn = HULL_MINS[hull] || [0, 0, 0], mx = HULL_MAXS[hull] || [0, 0, 0];
   const lo = [Math.min(start[0], end[0]) + mn[0], Math.min(start[1], end[1]) + mn[1], Math.min(start[2], end[2]) + mn[2]];
   const hi = [Math.max(start[0], end[0]) + mx[0], Math.max(start[1], end[1]) + mx[1], Math.max(start[2], end[2]) + mx[2]];
   for (const s of SOLIDS) {
@@ -748,6 +784,540 @@ function teleport(name) {
 }
 
 // =====================================================================
+// Spielermodelle: GPU-Skinning (1 Knochen je Vertex) + Instancing
+// =====================================================================
+const progModel = program(`#version 300 es
+precision highp float; precision highp int;
+layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNrm; layout(location=2) in vec2 aUV; layout(location=3) in float aBone;
+layout(location=4) in vec4 iPY; layout(location=5) in vec4 iAn; layout(location=6) in vec4 iTi;
+uniform mat4 uVP; uniform highp sampler2D uAnim;
+out vec2 vUV; out vec3 vN; out vec4 vTint;
+void main() {
+  int b = int(aBone + 0.5) * 3;
+  ivec2 ca = ivec2(b, int(iAn.x + 0.5)), cb = ivec2(b, int(iAn.y + 0.5));
+  float t = iAn.z;
+  vec4 r0 = mix(texelFetch(uAnim, ca, 0), texelFetch(uAnim, cb, 0), t);
+  vec4 r1 = mix(texelFetch(uAnim, ca + ivec2(1, 0), 0), texelFetch(uAnim, cb + ivec2(1, 0), 0), t);
+  vec4 r2 = mix(texelFetch(uAnim, ca + ivec2(2, 0), 0), texelFetch(uAnim, cb + ivec2(2, 0), 0), t);
+  vec4 p = vec4(aPos, 1.0);
+  vec3 m = vec3(dot(r0, p), dot(r1, p), dot(r2, p)) * iAn.w;
+  vec3 n = vec3(dot(r0.xyz, aNrm), dot(r1.xyz, aNrm), dot(r2.xyz, aNrm));
+  float c = cos(iPY.w), s = sin(iPY.w);
+  vec3 w = vec3(c * m.x - s * m.y, s * m.x + c * m.y, m.z + 36.0 * iAn.w) + iPY.xyz;
+  vN = vec3(c * n.x - s * n.y, s * n.x + c * n.y, n.z);
+  vUV = aUV; vTint = iTi;
+  gl_Position = uVP * vec4(w, 1.0);
+}`, `#version 300 es
+precision mediump float;
+in vec2 vUV; in vec3 vN; in vec4 vTint;
+uniform sampler2D uTex; uniform vec3 uSun;
+out vec4 o;
+void main() {
+  vec4 c = texture(uTex, vUV);
+  if (c.a < 0.5) discard;
+  float d = dot(normalize(vN), uSun);
+  vec3 col = c.rgb * vTint.rgb * (0.66 + 0.5 * max(d, 0.0));
+  col = mix(col, vec3(1.0, 0.82, 0.78), vTint.a);
+  o = vec4(col, 1.0);
+}`);
+
+const progShadow = program(`#version 300 es
+precision highp float;
+layout(location=0) in vec2 aQ; layout(location=1) in vec4 iS;
+uniform mat4 uVP; out vec2 vQ;
+void main() { vQ = aQ; gl_Position = uVP * vec4(iS.x + aQ.x * iS.w, iS.y + aQ.y * iS.w, iS.z + 0.6, 1.0); }`,
+`#version 300 es
+precision mediump float;
+in vec2 vQ; out vec4 o;
+void main() { float d = length(vQ); o = vec4(0.0, 0.0, 0.0, 0.38 * smoothstep(1.0, 0.25, d)); }`);
+
+const progFx = program(`#version 300 es
+precision highp float;
+layout(location=0) in vec3 aPos; layout(location=1) in vec4 aCol; layout(location=2) in vec2 aUV;
+uniform mat4 uVP; out vec4 vC; out vec2 vUV;
+void main() { vC = aCol; vUV = aUV; gl_Position = uVP * vec4(aPos, 1.0); }`,
+`#version 300 es
+precision mediump float; in vec4 vC; in vec2 vUV; out vec4 o;
+void main() {
+  float a = vC.a;
+  if (vUV.x > -0.5) a *= smoothstep(1.0, 0.35, length(vUV * 2.0 - 1.0));
+  o = vec4(vC.rgb, a);
+}`);
+
+const MAX_INST = 512, STRIDE = 12;
+const instData = new Float32Array(MAX_INST * STRIDE);
+const instBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+gl.bufferData(gl.ARRAY_BUFFER, instData.byteLength, gl.DYNAMIC_DRAW);
+
+let MODELS = [], SEQ_NAMES = [];
+
+function bakeAnimation(m, buf) {
+  const A = new Int16Array(buf);
+  const nb = m.bones.length;
+  const out = new Float32Array(m.rows * nb * 12);
+  let p = 0;
+  for (const s of m.seqs) {
+    const nf = s.frames;
+    const dec = new Float32Array(nb * 7 * nf);
+    for (let j = 0; j < nb; j++) for (let c = 0; c < 7; c++) {
+      let acc = 0; const o = (j * 7 + c) * nf;
+      for (let f = 0; f < nf; f++) { acc = ((acc + A[p++] + 32768) & 65535) - 32768; dec[o + f] = acc; }
+    }
+    for (let f = 0; f < nf; f++) {
+      const rowBase = (s.row + f) * nb * 12;
+      for (let j = 0; j < nb; j++) {
+        let x = dec[(j * 7) * nf + f], y = dec[(j * 7 + 1) * nf + f], z = dec[(j * 7 + 2) * nf + f], w = dec[(j * 7 + 3) * nf + f];
+        const l = Math.hypot(x, y, z, w) || 1; x /= l; y /= l; z /= l; w /= l;
+        const px = dec[(j * 7 + 4) * nf + f] / 32, py = dec[(j * 7 + 5) * nf + f] / 32, pz = dec[(j * 7 + 6) * nf + f] / 32;
+        const L = [1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y), px,
+          2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x), py,
+          2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y), pz];
+        const o = rowBase + j * 12, par = m.bones[j];
+        if (par < 0) { for (let k = 0; k < 12; k++) out[o + k] = L[k]; }
+        else {
+          const P = rowBase + par * 12;
+          for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++)
+            out[o + r * 4 + c] = out[P + r * 4] * L[c] + out[P + r * 4 + 1] * L[4 + c] + out[P + r * 4 + 2] * L[8 + c] + (c === 3 ? out[P + r * 4 + 3] : 0);
+        }
+      }
+    }
+  }
+  const t = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, nb * 3, m.rows, 0, gl.RGBA, gl.FLOAT, out);
+  for (const k of [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER]) gl.texParameteri(gl.TEXTURE_2D, k, gl.NEAREST);
+  for (const k of [gl.TEXTURE_WRAP_S, gl.TEXTURE_WRAP_T]) gl.texParameteri(gl.TEXTURE_2D, k, gl.CLAMP_TO_EDGE);
+  return t;
+}
+
+async function buildModel(m, part) {
+  const vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+  const attr = (loc, data, size, type) => {
+    const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, size, type, false, 0, 0);
+  };
+  attr(0, new Float32Array(part(m.pos)), 3, gl.FLOAT);
+  attr(1, new Float32Array(part(m.nrm)), 3, gl.FLOAT);
+  attr(2, new Float32Array(part(m.uv)), 2, gl.FLOAT);
+  attr(3, new Uint8Array(part(m.bone)), 1, gl.UNSIGNED_BYTE);
+  const ib = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(part(m.idx)), gl.STATIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+  for (let i = 0; i < 3; i++) { gl.enableVertexAttribArray(4 + i); gl.vertexAttribDivisor(4 + i, 1); }
+  gl.bindVertexArray(null);
+  m.vao = vao;
+  m.tex = (await loadTexture(part(m.tex), m.texType, { repeat: false })).tex;
+  m.animTex = bakeAnimation(m, part(m.anim));
+  m.seq = {};
+  SEQ_NAMES.forEach((n, i) => (m.seq[n] = i));
+  return m;
+}
+
+// Schleifen laufen in GoldSrc ueber frames-1 (letzter Frame = erster)
+function frameOf(m, seqIdx, f) {
+  const s = m.seqs[seqIdx];
+  if (s.frames <= 1) return [s.row, s.row, 0];
+  if (s.loop) { const per = s.frames - 1; f = ((f % per) + per) % per; }
+  else f = Math.min(Math.max(f, 0), s.frames - 1);
+  const f0 = Math.floor(f), f1 = Math.min(f0 + 1, s.frames - 1);
+  return [s.row + f0, s.row + f1, f - f0];
+}
+const seqDuration = (m, i) => (m.seqs[i].frames - 1) / m.seqs[i].fps;
+
+// Schatten
+const shadowVao = gl.createVertexArray(), shadowBuf = gl.createBuffer();
+const shadowData = new Float32Array(MAX_INST * 4);
+{
+  gl.bindVertexArray(shadowVao);
+  const q = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, q);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, 1, 1, -1, -1, 1, 1, -1, 1]), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, shadowBuf); gl.bufferData(gl.ARRAY_BUFFER, shadowData.byteLength, gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, 0, 0); gl.vertexAttribDivisor(1, 1);
+  gl.bindVertexArray(null);
+}
+// Effekte
+const FX_MAX = 12000;
+const FXS = 9;
+const fxData = new Float32Array(FX_MAX * FXS);
+const fxVao = gl.createVertexArray(), fxBuf = gl.createBuffer();
+{
+  gl.bindVertexArray(fxVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, fxBuf); gl.bufferData(gl.ARRAY_BUFFER, fxData.byteLength, gl.DYNAMIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, FXS * 4, 0);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 4, gl.FLOAT, false, FXS * 4, 12);
+  gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 2, gl.FLOAT, false, FXS * 4, 28);
+  gl.bindVertexArray(null);
+}
+
+// Lightmap-Wert -> Helligkeit wie im Welt-Shader
+const lmToLight = v => Math.min(1.7, Math.pow(v / 255, LIGHT[1]) * LIGHT[0]);
+
+// =====================================================================
+// Wegnetz: 16er-Raster aus den Bodenflaechen, Standpruefung mit Hull 1
+// =====================================================================
+const CELL = 16, STEP_UP = 18;
+const NAV = { n: 0 };
+const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+
+function faceLightInfo(f) {
+  const ti = f.texinfo, tv = BSP.texinfo.v.subarray(ti * 8, ti * 8 + 8);
+  const vs = faceVerts(BSP, f);
+  let minS = Infinity, minT = Infinity, maxS = -Infinity, maxT = -Infinity;
+  for (const v of vs) {
+    const s = v[0] * tv[0] + v[1] * tv[1] + v[2] * tv[2] + tv[3], t = v[0] * tv[4] + v[1] * tv[5] + v[2] * tv[6] + tv[7];
+    minS = Math.min(minS, s); maxS = Math.max(maxS, s); minT = Math.min(minT, t); maxT = Math.max(maxT, t);
+  }
+  const bs = Math.floor(minS / 16), bt = Math.floor(minT / 16);
+  return { tv, bs, bt, lw: Math.ceil(maxS / 16) - bs + 1, lh: Math.ceil(maxT / 16) - bt + 1, vs };
+}
+
+function buildNav() {
+  const W0 = BSP.models[0];
+  const ox = Math.floor(W0.mins[0] / CELL) * CELL, oy = Math.floor(W0.mins[1] / CELL) * CELL;
+  const W = Math.ceil((W0.maxs[0] - ox) / CELL) + 1, H = Math.ceil((W0.maxs[1] - oy) / CELL) + 1;
+  const cols = new Array(W * H);
+  const sources = [{ m: W0, o: [0, 0, 0] }, ...SOLIDS.map(s => ({ m: s.model, o: s.origin }))];
+  const standable = (x, y, z) => {
+    const oz = z + 36.5;
+    if (pointContents(BSP.clip, W0.head[1], x, y, oz) === CONTENTS_SOLID) return false;
+    for (const s of SOLIDS) {
+      const m = s.model;
+      if (x < m.mins[0] + s.origin[0] - 17 || x > m.maxs[0] + s.origin[0] + 17 || y < m.mins[1] + s.origin[1] - 17 || y > m.maxs[1] + s.origin[1] + 17) continue;
+      if (pointContents(BSP.clip, m.head[1], x - s.origin[0], y - s.origin[1], oz - s.origin[2]) === CONTENTS_SOLID) return false;
+    }
+    return true;
+  };
+  for (const src of sources) {
+    for (let fi = src.m.firstFace; fi < src.m.firstFace + src.m.numFaces; fi++) {
+      const f = BSP.faces[fi], pl = f.plane, sg = f.side ? -1 : 1;
+      const nx = BSP.planes.n[pl * 3] * sg, ny = BSP.planes.n[pl * 3 + 1] * sg, nz = BSP.planes.n[pl * 3 + 2] * sg;
+      if (nz < 0.7) continue;
+      const mt = BSP.miptex[BSP.texinfo.mip[f.texinfo]];
+      if (!mt || mt.name.startsWith('sky')) continue;
+      const info = faceLightInfo(f);
+      const vs = info.vs.map(v => [v[0] + src.o[0], v[1] + src.o[1], v[2] + src.o[2]]);
+      const d = BSP.planes.d[pl] * sg + nx * src.o[0] + ny * src.o[1] + nz * src.o[2];
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (const v of vs) { x0 = Math.min(x0, v[0]); x1 = Math.max(x1, v[0]); y0 = Math.min(y0, v[1]); y1 = Math.max(y1, v[1]); }
+      const ix0 = Math.max(0, Math.ceil((x0 - ox - CELL / 2) / CELL)), ix1 = Math.min(W - 1, Math.floor((x1 - ox - CELL / 2) / CELL));
+      const iy0 = Math.max(0, Math.ceil((y0 - oy - CELL / 2) / CELL)), iy1 = Math.min(H - 1, Math.floor((y1 - oy - CELL / 2) / CELL));
+      for (let iy = iy0; iy <= iy1; iy++) for (let ix = ix0; ix <= ix1; ix++) {
+        const cx = ox + ix * CELL + CELL / 2, cy = oy + iy * CELL + CELL / 2;
+        // Punkt im (konvexen) Polygon, in XY projiziert
+        let pos = 0, neg = 0;
+        for (let k = 0; k < vs.length; k++) {
+          const a = vs[k], b = vs[(k + 1) % vs.length];
+          const c = (b[0] - a[0]) * (cy - a[1]) - (b[1] - a[1]) * (cx - a[0]);
+          if (c > 0.01) pos++; else if (c < -0.01) neg++;
+        }
+        if (pos && neg) continue;
+        const z = (d - nx * cx - ny * cy) / nz;
+        if (!standable(cx, cy, z)) continue;
+        // Helligkeit aus der Lightmap der Bodenflaeche
+        let lr = 200, lg = 200, lb = 200;
+        if (f.lightofs >= 0 && f.style0 !== 255) {
+          const s = cx * info.tv[0] + cy * info.tv[1] + z * info.tv[2] + info.tv[3] - src.o[0] * info.tv[0] - src.o[1] * info.tv[1] - src.o[2] * info.tv[2];
+          const t = cx * info.tv[4] + cy * info.tv[5] + z * info.tv[6] + info.tv[7] - src.o[0] * info.tv[4] - src.o[1] * info.tv[5] - src.o[2] * info.tv[6];
+          const lx = Math.min(info.lw - 1, Math.max(0, Math.round((s - info.bs * 16) / 16)));
+          const ly = Math.min(info.lh - 1, Math.max(0, Math.round((t - info.bt * 16) / 16)));
+          const o = f.lightofs + (ly * info.lw + lx) * 3;
+          if (o + 2 < BSP.lighting.length) { lr = BSP.lighting[o]; lg = BSP.lighting[o + 1]; lb = BSP.lighting[o + 2]; }
+        }
+        const ci = iy * W + ix;
+        (cols[ci] || (cols[ci] = [])).push([z, lr, lg, lb]);
+      }
+    }
+  }
+  // Knoten je Spalte: nach Hoehe sortiert, nahe beieinander liegende zusammenfassen
+  const nodes = [];
+  const colStart = new Int32Array(W * H).fill(-1), colCount = new Uint8Array(W * H);
+  for (let ci = 0; ci < W * H; ci++) {
+    const c = cols[ci]; if (!c) continue;
+    c.sort((a, b) => a[0] - b[0]);
+    const merged = [];
+    for (const e of c) { const last = merged[merged.length - 1]; if (last && e[0] - last[0] < 8) merged[merged.length - 1] = e; else merged.push(e); }
+    colStart[ci] = nodes.length; colCount[ci] = Math.min(255, merged.length);
+    for (const e of merged.slice(0, 255)) nodes.push([ci % W, (ci / W) | 0, e[0], e[1], e[2], e[3]]);
+  }
+  const N = nodes.length;
+  const nx = new Float32Array(N), ny = new Float32Array(N), nzA = new Float32Array(N), light = new Float32Array(N * 3);
+  const cix = new Int32Array(N), ciy = new Int32Array(N);
+  for (let i = 0; i < N; i++) {
+    const [ix, iy, z, r, g, b] = nodes[i];
+    cix[i] = ix; ciy[i] = iy; nx[i] = ox + ix * CELL + CELL / 2; ny[i] = oy + iy * CELL + CELL / 2; nzA[i] = z;
+    light[i * 3] = lmToLight(r); light[i * 3 + 1] = lmToLight(g); light[i * 3 + 2] = lmToLight(b);
+  }
+  const findIn = (ix, iy, z, tol) => {
+    if (ix < 0 || iy < 0 || ix >= W || iy >= H) return -1;
+    const ci = iy * W + ix, s = colStart[ci]; if (s < 0) return -1;
+    let best = -1, bd = tol;
+    for (let k = 0; k < colCount[ci]; k++) { const dz = Math.abs(nzA[s + k] - z); if (dz <= bd) { bd = dz; best = s + k; } }
+    return best;
+  };
+  const nbr = new Int32Array(N * 8).fill(-1);
+  for (let i = 0; i < N; i++) {
+    for (let k = 0; k < 8; k++) {
+      const [dx, dy] = DIRS[k];
+      const j = findIn(cix[i] + dx, ciy[i] + dy, nzA[i], STEP_UP);
+      if (j < 0) continue;
+      if (k >= 4) { // diagonal: keine Ecken schneiden
+        if (findIn(cix[i] + dx, ciy[i], nzA[i], STEP_UP) < 0 || findIn(cix[i], ciy[i] + dy, nzA[i], STEP_UP) < 0) continue;
+      }
+      nbr[i * 8 + k] = j;
+    }
+  }
+  Object.assign(NAV, { n: N, ox, oy, W, H, colStart, colCount, x: nx, y: ny, z: nzA, light, cix, ciy, nbr, findIn,
+    dist: new Float32Array(N).fill(Infinity), reach: [], heap: new Int32Array(N + 1), heapPos: new Int32Array(N) });
+}
+
+function navNodeAt(x, y, zFeet, tol = 30) {
+  const ix = Math.floor((x - NAV.ox) / CELL), iy = Math.floor((y - NAV.oy) / CELL);
+  return NAV.findIn(ix, iy, zFeet, tol);
+}
+
+// Dijkstra vom Spielerknoten (bis 5000 Einheiten Weg); merkt sich Spawn-Kandidaten
+function updateFlow(src) {
+  const D = NAV.dist; D.fill(Infinity);
+  if (src < 0) return;
+  const heap = [src]; D[src] = 0;
+  const reach = [];
+  const push = i => { heap.push(i); let c = heap.length - 1; while (c > 0) { const p = (c - 1) >> 1; if (D[heap[p]] <= D[heap[c]]) break; [heap[p], heap[c]] = [heap[c], heap[p]]; c = p; } };
+  const pop = () => {
+    const top = heap[0], last = heap.pop();
+    if (heap.length) { heap[0] = last; let c = 0; for (;;) { const l = c * 2 + 1, r = l + 1; let m = c;
+      if (l < heap.length && D[heap[l]] < D[heap[m]]) m = l; if (r < heap.length && D[heap[r]] < D[heap[m]]) m = r;
+      if (m === c) break; [heap[m], heap[c]] = [heap[c], heap[m]]; c = m; } }
+    return top;
+  };
+  const done = new Uint8Array(NAV.n);
+  while (heap.length) {
+    const i = pop();
+    if (done[i]) continue; done[i] = 1;
+    const di = D[i];
+    if (di > 5000) break;
+    if (di > 650 && di < 1900) reach.push(i);
+    for (let k = 0; k < 8; k++) {
+      const j = NAV.nbr[i * 8 + k]; if (j < 0 || done[j]) continue;
+      const nd = di + (k < 4 ? CELL : CELL * 1.4142) + Math.max(0, NAV.z[j] - NAV.z[i]) * 0.5;
+      if (nd < D[j]) { D[j] = nd; push(j); }
+    }
+  }
+  NAV.reach = reach;
+}
+
+// =====================================================================
+// Gegner
+// =====================================================================
+const ENEMY_TYPES = {
+  terror: { hp: 100, speed: 205, label: 'Phoenix Connexion' },
+  leet: { hp: 70, speed: 245, label: 'L337 Krew' },
+  arctic: { hp: 160, speed: 155, label: 'Arctic Avengers' },
+  guerilla: { hp: 100, speed: 195, label: 'Guerilla Warfare' },
+  militia: { hp: 110, speed: 190, label: 'Midwest Militia' },
+};
+const DEATHS = ['death1', 'death2', 'death3', 'head', 'gutshot', 'back', 'forward'];
+const ALIVE = 0, DYING = 1;
+let enemies = [];
+const game = { hp: 100, kills: 0, time: 0, over: false, spawnAcc: 0, flowT: 0, playerNode: -1, hurt: 0, god: false, deathT: 0, idc: 0 };
+
+function modelByKey(k) { return MODELS.find(m => m.key === k); }
+
+function trySpawn() {
+  const R = NAV.reach; if (!R.length) return false;
+  const p = player, eye = eyePos();
+  const cp = Math.cos(p.pitch), fwd = [Math.cos(p.yaw) * cp, Math.sin(p.yaw) * cp, Math.sin(p.pitch)];
+  for (let tries = 0; tries < 12; tries++) {
+    const i = R[(Math.random() * R.length) | 0];
+    const x = NAV.x[i], y = NAV.y[i], z = NAV.z[i];
+    // nicht im Blickfeld erscheinen
+    const vx = x - eye[0], vy = y - eye[1], vz = z + 50 - eye[2], d = Math.hypot(vx, vy, vz);
+    const inFov = (vx * fwd[0] + vy * fwd[1] + vz * fwd[2]) / d > Math.cos(hfov() / 2 + 0.25);
+    if (inFov && trace(eye, [x, y, z + 50], 0).fraction === 1) continue;
+    if (enemies.some(e => e.state === ALIVE && Math.abs(e.x - x) < 24 && Math.abs(e.y - y) < 24)) continue;
+    const keys = Object.keys(ENEMY_TYPES);
+    const key = keys[(Math.random() * keys.length) | 0], T = ENEMY_TYPES[key];
+    const m = modelByKey(key);
+    enemies.push({ id: ++game.idc, m, key, x, y, z, node: i, yaw: Math.atan2(p.o[1] - y, p.o[0] - x), hp: T.hp, speed: T.speed * (0.92 + Math.random() * 0.16),
+      state: ALIVE, t: 0, seq: m.seq.run, f: Math.random() * 30, flash: 0, atk: 0.4 + Math.random() * 0.4, sink: 0, light: [1, 1, 1] });
+    return true;
+  }
+  return false;
+}
+
+// Bewegung eines Gegners auf dem Wegnetz; false, wenn dort kein begehbarer Knoten ist
+function enemyStep(e, x, y) {
+  const j = navNodeAt(x, y, e.z, STEP_UP + 2);
+  if (j < 0) return false;
+  e.x = x; e.y = y; e.node = j;
+  return true;
+}
+
+function updateEnemies(dt) {
+  const p = player, feet = p.o[2] - 36;
+  const hash = new Map();
+  for (const e of enemies) {
+    e.flash = Math.max(0, e.flash - dt * 7);
+    if (e.state !== ALIVE) {
+      e.t += dt;
+      e.f += dt * e.m.seqs[e.seq].fps;
+      const dur = seqDuration(e.m, e.seq);
+      if (e.t > dur + 1.5) e.sink += dt * 34;
+      continue;
+    }
+    const dx = p.o[0] - e.x, dy = p.o[1] - e.y, d = Math.hypot(dx, dy);
+    const sameLevel = Math.abs(feet - e.z) < 44;
+    const attack = sameLevel && d < 50 && !game.over;
+    let mvx = 0, mvy = 0;
+    if (attack) {
+      const s = e.m.seq.ref_shoot_knife;
+      if (e.seq !== s) { e.seq = s; e.f = 0; }
+      e.f += dt * e.m.seqs[s].fps;
+      e.atk -= dt;
+      if (e.atk <= 0) { e.atk = 1.05; hurtPlayer(7 + Math.random() * 5, e); }
+    } else {
+      e.atk = Math.max(e.atk, 0.35);
+      let tx = p.o[0], ty = p.o[1];
+      if (!(sameLevel && d < 140) && e.node >= 0) {
+        // dem Flow-Field folgen: Nachbar mit kleinster Wegdistanz
+        let best = -1, bd = NAV.dist[e.node];
+        for (let k = 0; k < 8; k++) { const j = NAV.nbr[e.node * 8 + k]; if (j >= 0 && NAV.dist[j] < bd) { bd = NAV.dist[j]; best = j; } }
+        if (best >= 0) { tx = NAV.x[best]; ty = NAV.y[best]; }
+      }
+      const vx = tx - e.x, vy = ty - e.y, vl = Math.hypot(vx, vy) || 1;
+      mvx = vx / vl; mvy = vy / vl;
+      const run = e.m.seq.run;
+      if (e.seq !== run) { e.seq = run; e.f = 0; }
+      e.f += dt * e.m.seqs[run].fps * (e.speed / e.m.seqs[run].speed);
+      const sx = e.x + mvx * e.speed * dt, sy = e.y + mvy * e.speed * dt;
+      if (!enemyStep(e, sx, sy) && !enemyStep(e, sx, e.y)) enemyStep(e, e.x, sy);
+    }
+    const want = attack ? Math.atan2(dy, dx) : (mvx || mvy ? Math.atan2(mvy, mvx) : e.yaw);
+    const dyaw = ((want - e.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+    e.yaw += dyaw * Math.min(1, dt * 9);
+    if (e.node >= 0) {
+      e.z += (NAV.z[e.node] - e.z) * Math.min(1, dt * 14);
+      const L = NAV.light; e.light[0] = L[e.node * 3]; e.light[1] = L[e.node * 3 + 1]; e.light[2] = L[e.node * 3 + 2];
+    }
+    const hk = ((e.x / 48) | 0) * 7919 + ((e.y / 48) | 0);
+    let b = hash.get(hk); if (!b) hash.set(hk, b = []); b.push(e);
+  }
+  // Abstand halten
+  for (const e of enemies) {
+    if (e.state !== ALIVE) continue;
+    const gx = (e.x / 48) | 0, gy = (e.y / 48) | 0;
+    let px = 0, py = 0;
+    for (let ox = -1; ox <= 1; ox++) for (let oy = -1; oy <= 1; oy++) {
+      const b = hash.get((gx + ox) * 7919 + gy + oy); if (!b) continue;
+      for (const o of b) {
+        if (o === e) continue;
+        const dx = e.x - o.x, dy = e.y - o.y, d2 = dx * dx + dy * dy;
+        if (d2 < 30 * 30 && d2 > 0.01 && Math.abs(e.z - o.z) < 40) { const d = Math.sqrt(d2), k = (30 - d) / d * 0.5; px += dx * k; py += dy * k; }
+      }
+    }
+    // vom Spieler wegdruecken (Gegner blockieren, laufen aber nicht in dich hinein)
+    const dx = e.x - p.o[0], dy = e.y - p.o[1], d = Math.hypot(dx, dy);
+    if (d < 34 && d > 0.01 && Math.abs(feet - e.z) < 44) { px += dx / d * (34 - d); py += dy / d * (34 - d); }
+    if (px || py) enemyStep(e, e.x + px, e.y + py);
+  }
+  enemies = enemies.filter(e => e.state === ALIVE || e.sink < 44);
+}
+
+function damageEnemy(e, dmg, head) {
+  if (e.state !== ALIVE) return false;
+  e.hp -= dmg; e.flash = 1;
+  if (e.hp > 0) return false;
+  e.state = DYING; e.t = 0; e.f = 0;
+  e.seq = e.m.seq[head ? 'head' : DEATHS[(Math.random() * DEATHS.length) | 0]];
+  game.kills++;
+  return true;
+}
+
+function hurtPlayer(dmg, from) {
+  if (game.over) return;
+  game.hurt = 1;
+  if (game.god) return;
+  game.hp = Math.max(0, game.hp - Math.round(dmg));
+  if (game.hp <= 0) playerDied();
+}
+
+// =====================================================================
+// Waffen: USP (Autoshoot auf Sicht) und Messer (rundum)
+// =====================================================================
+const USP = { mag: 12, size: 12, cd: 0, reload: 0, interval: 0.17, reloadTime: 2.2, damage: 34, range: 1500, headChance: 0.14 };
+const KNIFE = { cd: 0, interval: 0.7, damage: 40, range: 76 };
+let fx = [];
+
+function eyePos() { const p = player; return [p.o[0], p.o[1], p.o[2] + MOVE.view + p.stepSmooth]; }
+function gunPos() {
+  const p = player, e = eyePos(), cp = Math.cos(p.pitch);
+  const f = [Math.cos(p.yaw) * cp, Math.sin(p.yaw) * cp, Math.sin(p.pitch)], r = [Math.sin(p.yaw), -Math.cos(p.yaw), 0];
+  return [e[0] + f[0] * 16 + r[0] * 7, e[1] + f[1] * 16 + r[1] * 7, e[2] + f[2] * 16 - 6];
+}
+
+// Sichtbarer Gegner, der dem Fadenkreuz am naechsten ist
+function acquireTarget(range) {
+  const p = player, eye = eyePos();
+  const cp = Math.cos(p.pitch), fwd = [Math.cos(p.yaw) * cp, Math.sin(p.yaw) * cp, Math.sin(p.pitch)];
+  const halfH = hfov() / 2 * 0.95, halfV = VFOV / 2 * 0.95;
+  const cand = [];
+  for (const e of enemies) {
+    if (e.state !== ALIVE) continue;
+    const tz = e.z + 48;
+    const vx = e.x - eye[0], vy = e.y - eye[1], vz = tz - eye[2];
+    const d = Math.hypot(vx, vy, vz);
+    if (d > range || d < 1) continue;
+    const dyaw = ((Math.atan2(vy, vx) - p.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+    const dpit = Math.atan2(vz, Math.hypot(vx, vy)) - p.pitch;
+    if (Math.abs(dyaw) > halfH || Math.abs(dpit) > halfV) continue;
+    cand.push([Math.acos(Math.max(-1, Math.min(1, (vx * fwd[0] + vy * fwd[1] + vz * fwd[2]) / d))), e, tz]);
+  }
+  cand.sort((a, b) => a[0] - b[0]);
+  for (let i = 0; i < Math.min(8, cand.length); i++) {
+    const [, e, tz] = cand[i];
+    // Sichtlinie: Brust oder Kopf frei?
+    if (trace(eye, [e.x, e.y, tz], 0).fraction > 0.995 || trace(eye, [e.x, e.y, e.z + 62], 0).fraction > 0.995) return e;
+  }
+  return null;
+}
+
+function updateWeapons(dt) {
+  if (game.over) return;
+  // USP
+  USP.cd -= dt;
+  if (USP.reload > 0) { USP.reload -= dt; if (USP.reload <= 0) USP.mag = USP.size; }
+  else if (USP.cd <= 0) {
+    const e = acquireTarget(USP.range);
+    if (e) {
+      USP.cd = USP.interval; USP.mag--;
+      const head = Math.random() < USP.headChance;
+      const hz = e.z + (head ? 62 : 40 + Math.random() * 14);
+      fx.push({ type: 'tracer', a: gunPos(), b: [e.x, e.y, hz], t: 0, life: 0.07 });
+      for (let k = 0; k < (head ? 10 : 5); k++) fx.push({ type: 'blood', p: [e.x, e.y, hz], v: [(Math.random() - .5) * 140, (Math.random() - .5) * 140, 30 + Math.random() * 110], t: 0, life: .3 + Math.random() * .25, s: 1.2 + Math.random() * 1.8 });
+      damageEnemy(e, head ? USP.damage * 4 : USP.damage, head);
+      if (head) headshotPing();
+      muzzleFlash();
+      if (USP.mag <= 0) USP.reload = USP.reloadTime;
+    }
+  }
+  // Messer: trifft alles im Umkreis, auch hinter dir
+  KNIFE.cd -= dt;
+  if (KNIFE.cd <= 0) {
+    const p = player, feet = p.o[2] - 36;
+    const near = enemies.filter(e => e.state === ALIVE && Math.abs(e.z - feet) < 48 && Math.hypot(e.x - p.o[0], e.y - p.o[1]) < KNIFE.range);
+    if (near.length) {
+      KNIFE.cd = KNIFE.interval;
+      for (const e of near) damageEnemy(e, KNIFE.damage, false);
+      fx.push({ type: 'slash', o: [p.o[0], p.o[1], p.o[2] + 2], a: p.yaw + Math.random() * 6.28, t: 0, life: 0.22 });
+    }
+  }
+}
+
+function updateFx(dt) { for (const f of fx) f.t += dt; fx = fx.filter(f => f.t < f.life); }
+
+// =====================================================================
 // Eingabe
 // =====================================================================
 const stickEl = $('#stick'), stickKnob = $('#stick i');
@@ -835,8 +1405,8 @@ function toast(msg) {
   const t = $('#toast'); t.textContent = msg; t.classList.add('show');
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 1600);
 }
-const CTRL_TOUCH = 'Linker Daumen: laufen · rechter Daumen: umschauen · Knopf rechts unten: springen';
-const CTRL_PC = 'WASD: laufen · Maus: umschauen (Klick fängt die Maus) · Leertaste: springen · Shift: gehen · Esc: Pause';
+const CTRL_TOUCH = 'Linker Daumen: laufen · rechter Daumen: umschauen · Knopf rechts unten: springen · Schießen geht von selbst';
+const CTRL_PC = 'WASD: laufen · Maus: umschauen (Klick fängt die Maus) · Leertaste: springen · Shift: gehen · Esc: Pause · Schießen geht von selbst';
 $('#ctrlHint').textContent = IS_TOUCH ? CTRL_TOUCH : CTRL_PC;
 $('#ctrlHint2').textContent = IS_TOUCH ? CTRL_TOUCH : CTRL_PC;
 
@@ -848,6 +1418,7 @@ function refreshMenu() {
   $('#bhopBtn').textContent = 'Auto-Bhop: ' + (settings.autoBhop ? 'an' : 'aus');
   $('#bhopBtn').classList.toggle('on', settings.autoBhop);
   $('#stats').style.display = settings.fps ? '' : 'none';
+  refreshTestMenu();
 }
 $('#sens').addEventListener('input', e => { settings.sens = +e.target.value; saveSettings(); refreshMenu(); });
 $('#resBtn').addEventListener('click', () => { settings.res = (settings.res + 1) % RESOLUTIONS.length; saveSettings(); refreshMenu(); });
@@ -881,6 +1452,8 @@ const HFOV_43 = Math.PI / 2;
 const VFOV = 2 * Math.atan(Math.tan(HFOV_43 / 2) * 3 / 4);   // CS: 90 Grad horizontal bei 4:3
 const LIGHT = [1.55, 0.82, 1.0];   // Lightmap-Skalierung, Lightmap-Gamma, Endgamma
 let fallbackTex = null;
+const hfov = () => 2 * Math.atan(Math.tan(VFOV / 2) * aspect);
+let SUN = [0.36, 0.34, 0.87];
 
 function resize() {
   const dpr = Math.min(devicePixelRatio || 1, 2) * RESOLUTIONS[settings.res];
@@ -895,12 +1468,14 @@ function render() {
   gl.clearColor(0, 0, 0, 1);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   const p = player;
-  const eye = [p.o[0], p.o[1], p.o[2] + MOVE.view + p.stepSmooth];
+  const eye = eyePos();
+  let yaw = p.yaw, pitch = p.pitch;
+  if (game.over) { const k = Math.min(1, game.deathT / 0.7); eye[2] -= k * 46; pitch = pitch * (1 - k) + k * 0.25; }
   const proj = M4.persp(VFOV, aspect, 4, 16000);
   // Himmel: nur Drehung
   gl.disable(gl.DEPTH_TEST); gl.depthMask(false); gl.disable(gl.CULL_FACE);
   gl.useProgram(progSky.p);
-  gl.uniformMatrix4fv(progSky.u.uVP, false, M4.mul(proj, M4.view([0, 0, 0], p.yaw, p.pitch)));
+  gl.uniformMatrix4fv(progSky.u.uVP, false, M4.mul(proj, M4.view([0, 0, 0], yaw, pitch)));
   gl.uniform1i(progSky.u.uTex, 0);
   gl.activeTexture(gl.TEXTURE0);
   gl.bindVertexArray(SKY.vao);
@@ -909,10 +1484,20 @@ function render() {
     gl.bindTexture(gl.TEXTURE_2D, SKYTEX[k].tex);
     gl.drawArrays(gl.TRIANGLES, first, 6);
   }
-  // Welt
-  const VP = M4.mul(proj, M4.view(eye, p.yaw, p.pitch));
+  // Welt (undurchsichtig + maskiert), dann Schatten, Figuren, Durchsichtiges, Effekte
+  const VP = M4.mul(proj, M4.view(eye, yaw, pitch));
   gl.enable(gl.DEPTH_TEST); gl.depthMask(true);
   gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK); gl.frontFace(gl.CCW);
+  drawWorld(VP, false);
+  drawShadows(VP);
+  drawEnemies(VP);
+  drawWorld(VP, true);
+  drawFx(VP, eye, yaw);
+  gl.disable(gl.BLEND); gl.depthMask(true);
+  gl.bindVertexArray(null);
+}
+
+function drawWorld(VP, translucent) {
   gl.useProgram(progWorld.p);
   gl.uniformMatrix4fv(progWorld.u.uVP, false, VP);
   gl.uniform1i(progWorld.u.uTex, 0); gl.uniform1i(progWorld.u.uLM, 1);
@@ -922,10 +1507,11 @@ function render() {
   gl.bindVertexArray(WORLD.vao);
   let state = '';
   for (const g of WORLD.groups) {
+    if ((g.kind === 'trans') !== translucent) continue;
     if (g.kind !== state) {
       state = g.kind;
       if (state === 'masked') gl.disable(gl.CULL_FACE);
-      if (state === 'trans') { gl.enable(gl.BLEND); gl.depthMask(false); }
+      if (state === 'trans') { gl.enable(gl.BLEND); gl.depthMask(false); gl.disable(gl.CULL_FACE); }
     }
     if (state === 'trans') gl.blendFunc(gl.SRC_ALPHA, g.additive ? gl.ONE : gl.ONE_MINUS_SRC_ALPHA);
     gl.uniform1f(progWorld.u.uAlpha, state === 'trans' ? g.amt / 255 : 1);
@@ -933,8 +1519,117 @@ function render() {
     gl.bindTexture(gl.TEXTURE_2D, (TEX[g.name] || fallbackTex).tex);
     gl.drawArrays(gl.TRIANGLES, g.first, g.count);
   }
-  gl.disable(gl.BLEND); gl.depthMask(true);
+  gl.disable(gl.BLEND); gl.depthMask(true); gl.enable(gl.CULL_FACE);
   gl.bindVertexArray(null);
+}
+
+function drawShadows(VP) {
+  let n = 0;
+  for (const e of enemies) {
+    if (n >= MAX_INST) break;
+    const r = e.state === ALIVE ? 20 : 20 * Math.max(0, 1 - e.t / 2.5);
+    if (r <= 1) continue;
+    shadowData[n * 4] = e.x; shadowData[n * 4 + 1] = e.y; shadowData[n * 4 + 2] = e.node >= 0 ? NAV.z[e.node] : e.z; shadowData[n * 4 + 3] = r;
+    n++;
+  }
+  if (!n) return;
+  gl.bindBuffer(gl.ARRAY_BUFFER, shadowBuf);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, shadowData, 0, n * 4);
+  gl.useProgram(progShadow.p);
+  gl.uniformMatrix4fv(progShadow.u.uVP, false, VP);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  gl.depthMask(false); gl.enable(gl.POLYGON_OFFSET_FILL); gl.polygonOffset(-1, -4);
+  gl.bindVertexArray(shadowVao);
+  gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, n);
+  gl.bindVertexArray(null);
+  gl.disable(gl.POLYGON_OFFSET_FILL); gl.depthMask(true); gl.disable(gl.BLEND);
+}
+
+let lastTris = 0;
+function drawEnemies(VP) {
+  const byModel = new Map();
+  for (const e of enemies) { if (!byModel.has(e.m)) byModel.set(e.m, []); byModel.get(e.m).push(e); }
+  let off = 0; const ranges = [];
+  for (const [m, list] of byModel) {
+    const start = off;
+    for (const e of list) {
+      if (off >= MAX_INST) break;
+      const o = off * STRIDE, rows = frameOf(m, e.seq, e.f);
+      instData[o] = e.x; instData[o + 1] = e.y; instData[o + 2] = e.z - e.sink; instData[o + 3] = e.yaw;
+      instData[o + 4] = rows[0]; instData[o + 5] = rows[1]; instData[o + 6] = rows[2]; instData[o + 7] = 1;
+      instData[o + 8] = e.light[0]; instData[o + 9] = e.light[1]; instData[o + 10] = e.light[2]; instData[o + 11] = e.flash * 0.6;
+      off++;
+    }
+    ranges.push([m, start, off - start]);
+  }
+  lastTris = 0;
+  if (!off) return;
+  gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, instData, 0, off * STRIDE);
+  gl.useProgram(progModel.p);
+  gl.uniformMatrix4fv(progModel.u.uVP, false, VP);
+  gl.uniform3fv(progModel.u.uSun, SUN);
+  gl.uniform1i(progModel.u.uTex, 0); gl.uniform1i(progModel.u.uAnim, 1);
+  for (const [m, start, count] of ranges) {
+    if (!count) continue;
+    gl.bindVertexArray(m.vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, instBuf);
+    for (let i = 0; i < 3; i++) gl.vertexAttribPointer(4 + i, 4, gl.FLOAT, false, STRIDE * 4, start * STRIDE * 4 + i * 16);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, m.tex);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, m.animTex);
+    gl.drawElementsInstanced(gl.TRIANGLES, m.ranges.body[1], gl.UNSIGNED_SHORT, m.ranges.body[0] * 2, count);
+    lastTris += m.ranges.body[1] / 3 * count;
+    if (m.key === 'militia' && m.ranges.extra) gl.drawElementsInstanced(gl.TRIANGLES, m.ranges.extra[1], gl.UNSIGNED_SHORT, m.ranges.extra[0] * 2, count);
+  }
+  gl.bindVertexArray(null);
+  gl.activeTexture(gl.TEXTURE0);
+}
+
+function drawFx(VP, eye, yaw) {
+  if (!fx.length) return;
+  let o = 0;
+  const put = (x, y, z, r, g, b, a, u, v) => { if (o + FXS > fxData.length) return;
+    fxData[o++] = x; fxData[o++] = y; fxData[o++] = z; fxData[o++] = r; fxData[o++] = g; fxData[o++] = b; fxData[o++] = a; fxData[o++] = u; fxData[o++] = v; };
+  // round = true: weiche, runde Form (Blut)
+  const quad = (A, B, C, D, ca, cb, round) => {
+    const U = round ? [0, 1, 1, 0] : [-1, -1, -1, -1], V = round ? [0, 0, 1, 1] : [-1, -1, -1, -1];
+    put(...A, ...ca, U[0], V[0]); put(...B, ...cb, U[1], V[1]); put(...C, ...cb, U[2], V[2]);
+    put(...A, ...ca, U[0], V[0]); put(...C, ...cb, U[2], V[2]); put(...D, ...ca, U[3], V[3]);
+  };
+  const right = [Math.sin(yaw), -Math.cos(yaw), 0];
+  for (const f of fx) {
+    const k = 1 - f.t / f.life;
+    if (f.type === 'tracer') {
+      const d = [f.b[0] - f.a[0], f.b[1] - f.a[1], f.b[2] - f.a[2]], c = [eye[0] - f.a[0], eye[1] - f.a[1], eye[2] - f.a[2]];
+      let n = [d[1] * c[2] - d[2] * c[1], d[2] * c[0] - d[0] * c[2], d[0] * c[1] - d[1] * c[0]];
+      const l = Math.hypot(...n) || 1; n = n.map(v => v / l * 0.7);
+      const A = f.a, B = f.b, a = .8 * k;
+      quad([A[0] - n[0], A[1] - n[1], A[2] - n[2]], [B[0] - n[0], B[1] - n[1], B[2] - n[2]], [B[0] + n[0], B[1] + n[1], B[2] + n[2]], [A[0] + n[0], A[1] + n[1], A[2] + n[2]], [1, .92, .55, a], [1, .8, .35, a * .35]);
+    } else if (f.type === 'blood') {
+      const t = f.t, x = f.p[0] + f.v[0] * t, y = f.p[1] + f.v[1] * t, z = f.p[2] + f.v[2] * t - 320 * t * t, s = f.s * (1 + t * 1.5), a = .85 * k;
+      const rx = right[0] * s, ry = right[1] * s, c = [.38, .01, .01, a];
+      quad([x - rx, y - ry, z - s], [x + rx, y + ry, z - s], [x + rx, y + ry, z + s], [x - rx, y - ry, z + s], c, c, true);
+    } else if (f.type === 'slash') {
+      // waagrechter Ring um den Spieler auf Brusthoehe, dreht sich und verblasst
+      const segs = 24, r0 = 30, r1 = KNIFE.range, z = f.o[2] + 8, a0 = f.a + f.t * 9;
+      for (let i = 0; i < segs; i++) {
+        const u = a0 + i / segs * Math.PI * 2, v = a0 + (i + 1) / segs * Math.PI * 2;
+        const al = .45 * k * (i / segs);
+        quad([f.o[0] + Math.cos(u) * r0, f.o[1] + Math.sin(u) * r0, z], [f.o[0] + Math.cos(u) * r1, f.o[1] + Math.sin(u) * r1, z],
+          [f.o[0] + Math.cos(v) * r1, f.o[1] + Math.sin(v) * r1, z], [f.o[0] + Math.cos(v) * r0, f.o[1] + Math.sin(v) * r0, z], [1, 1, 1, 0], [1, 1, 1, al]);
+      }
+    }
+  }
+  if (!o) return;
+  gl.bindBuffer(gl.ARRAY_BUFFER, fxBuf);
+  gl.bufferSubData(gl.ARRAY_BUFFER, 0, fxData, 0, o);
+  gl.useProgram(progFx.p);
+  gl.uniformMatrix4fv(progFx.u.uVP, false, VP);
+  gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA); gl.depthMask(false); gl.disable(gl.CULL_FACE);
+  gl.bindVertexArray(fxVao);
+  gl.drawArrays(gl.TRIANGLES, 0, o / FXS);
+  gl.bindVertexArray(null);
+  gl.depthMask(true); gl.disable(gl.BLEND); gl.enable(gl.CULL_FACE);
 }
 
 // ---------------------------------------------------------------- Hauptschleife
@@ -945,29 +1640,118 @@ function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000 || 0);
   last = now;
   if (playing) {
-    readKeys();
-    const n = Math.max(1, Math.ceil(dt / STEP)), h = dt / n;
-    for (let i = 0; i < n; i++) playerMove(h);
-    player.stepSmooth *= Math.exp(-dt * 14);
-    if (Math.abs(player.stepSmooth) < 0.05) player.stepSmooth = 0;
+    if (!game.over) {
+      readKeys();
+      const n = Math.max(1, Math.ceil(dt / STEP)), h = dt / n;
+      for (let i = 0; i < n; i++) playerMove(h);
+      playerPushback();
+      player.stepSmooth *= Math.exp(-dt * 14);
+      if (Math.abs(player.stepSmooth) < 0.05) player.stepSmooth = 0;
+      game.time += dt;
+    } else game.deathT += dt;
+    updateGame(dt);
   }
   render();
   fpsAcc += dt; fpsN++;
   if (fpsAcc > 0.5) {
     const fps = Math.round(fpsN / fpsAcc);
-    if (settings.fps) $('#stats').innerHTML = `${fps} fps · ${(fpsAcc / fpsN * 1000).toFixed(1)} ms<br>${canvas.width}×${canvas.height}`;
+    const alive = enemies.filter(e => e.state === ALIVE).length;
+    if (settings.fps) $('#stats').innerHTML = `${fps} fps · ${(fpsAcc / fpsN * 1000).toFixed(1)} ms<br>${alive} Gegner · ${Math.round(lastTris / 1000)}k Dreiecke<br>${canvas.width}×${canvas.height}`;
     fpsAcc = 0; fpsN = 0;
   }
-  const spd = Math.round(Math.hypot(player.v[0], player.v[1]));
-  $('#speedo').innerHTML = playing ? `${spd} <small>u/s</small>` : '';
+  updateHud(dt);
 }
+
+function updateGame(dt) {
+  // Flow-Field 4x pro Sekunde (oder sofort, wenn der Spieler den Knoten wechselt)
+  const feet = player.o[2] - 36;
+  let pn = navNodeAt(player.o[0], player.o[1], feet, 30);
+  if (pn < 0) for (let r = 1; r <= 2 && pn < 0; r++) for (const [dx, dy] of DIRS) { pn = navNodeAt(player.o[0] + dx * CELL * r, player.o[1] + dy * CELL * r, feet, 30); if (pn >= 0) break; }
+  game.flowT -= dt;
+  if (pn >= 0 && (game.flowT <= 0 || (pn !== game.playerNode && game.flowT < 0.15))) { game.playerNode = pn; updateFlow(pn); game.flowT = 0.25; }
+  // Nachschub: bis zur eingestellten Zahl, hoechstens 5 pro Sekunde
+  if (!game.over && game.time > 1.5) {
+    const alive = enemies.filter(e => e.state === ALIVE).length;
+    game.spawnAcc = Math.min(2, game.spawnAcc + dt * 5);
+    while (game.spawnAcc >= 1 && alive + (game._spawned || 0) < ENEMY_COUNTS[settings.enemies]) {
+      game.spawnAcc -= 1;
+      if (!trySpawn()) break;
+      game._spawned = (game._spawned || 0) + 1;
+    }
+    game._spawned = 0;
+  }
+  updateEnemies(dt);
+  updateWeapons(dt);
+  updateFx(dt);
+}
+
+// Gegner blockieren den Spieler leicht (wie bei Vampire Survivors)
+function playerPushback() {
+  const p = player, feet = p.o[2] - 36;
+  let px = 0, py = 0;
+  for (const e of enemies) {
+    if (e.state !== ALIVE || Math.abs(e.z - feet) > 44) continue;
+    const dx = p.o[0] - e.x, dy = p.o[1] - e.y, d = Math.hypot(dx, dy);
+    if (d < 30 && d > 0.01) { px += dx / d * (30 - d) * 0.5; py += dy / d * (30 - d) * 0.5; }
+  }
+  if (!px && !py) return;
+  const tr = trace(p.o, [p.o[0] + px, p.o[1] + py, p.o[2]]);
+  if (!tr.startsolid) p.o = tr.endpos;
+}
+
+// ---------------------------------------------------------------- HUD
+let hsTimer = 0, muzzleT = 0;
+function muzzleFlash() { muzzleT = 0.05; }
+function headshotPing() { const el = $('#hs'); el.style.opacity = 1; clearTimeout(hsTimer); hsTimer = setTimeout(() => (el.style.opacity = 0), 450); }
+const fmtTime = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+let hudCache = '';
+function updateHud(dt) {
+  game.hurt = Math.max(0, game.hurt - dt * 2.2);
+  $('#hurt').style.opacity = game.over ? 0.75 : game.hurt.toFixed(2);
+  muzzleT -= dt; $('#muzzle').style.opacity = muzzleT > 0 ? (0.6 + Math.random() * 0.4).toFixed(2) : 0;
+  const ammo = USP.reload > 0 ? `<small>LADEN</small> ${Math.ceil(USP.reload * 10) / 10}` : `${USP.mag} <small>| ∞</small>`;
+  const key = game.hp + '|' + ammo + '|' + Math.floor(game.time) + '|' + game.kills;
+  if (key === hudCache) return;
+  hudCache = key;
+  const hp = $('#hp'); hp.innerHTML = `<span>✚</span>${game.hp}`; hp.classList.toggle('low', game.hp <= 25);
+  $('#ammo').innerHTML = ammo;
+  $('#timer').textContent = fmtTime(game.time) + '  ·  ' + game.kills + ' Kills';
+}
+
+function playerDied() {
+  game.over = true; game.deathT = 0;
+  input.fwd = input.side = 0;
+  setTimeout(() => {
+    $('#deadStats').innerHTML = `Überlebt: <b>${fmtTime(game.time)}</b> · Kills: <b>${game.kills}</b>`;
+    $('#dead').classList.add('show');
+    if (document.exitPointerLock && pointerLocked) document.exitPointerLock();
+  }, 1300);
+}
+function restartRound() {
+  enemies = []; fx = [];
+  Object.assign(game, { hp: 100, kills: 0, time: 0, over: false, spawnAcc: 0, flowT: 0, hurt: 0, deathT: 0 });
+  USP.mag = USP.size; USP.reload = 0; USP.cd = 0; KNIFE.cd = 0;
+  teleport('ct');
+  $('#dead').classList.remove('show');
+  hudCache = '';
+}
+$('#againBtn').addEventListener('click', () => { restartRound(); playing = true; });
+function refreshTestMenu() {
+  $('#cntLabel').textContent = 'Gegner gleichzeitig: ' + ENEMY_COUNTS[settings.enemies];
+  $('#godBtn').textContent = 'Unverwundbar: ' + (game.god ? 'an' : 'aus');
+  $('#godBtn').classList.toggle('on', game.god);
+}
+$('#cntMinus').addEventListener('click', () => { settings.enemies = Math.max(0, settings.enemies - 1); saveSettings(); refreshTestMenu(); });
+$('#cntPlus').addEventListener('click', () => { settings.enemies = Math.min(ENEMY_COUNTS.length - 1, settings.enemies + 1); saveSettings(); refreshTestMenu(); });
+$('#godBtn').addEventListener('click', () => { game.god = !game.god; refreshTestMenu(); });
+$('#restartBtn').addEventListener('click', () => { restartRound(); togglePause(false); });
 
 // ---------------------------------------------------------------- Start
 (async () => {
   const bar = $('#loadbar'), txt = $('#loadtxt');
   const step = (pct, msg) => { bar.style.width = pct + '%'; txt.textContent = msg; return new Promise(r => setTimeout(r, 0)); };
   await step(5, 'Entpacke Daten …');
-  const { man, part } = await loadPack();
+  const { man, part } = await loadPack('pack');
   await step(20, 'Lese de_dust …');
   BSP = parseBSP(part(man.bsp));
   await step(35, 'Lade Texturen …');
@@ -993,19 +1777,35 @@ function frame(now) {
   findSpots();
   buildTeleportButtons();
   teleport('ct');
-  await step(100, `Bereit · ${WORLD.tris.toLocaleString('de-DE')} Dreiecke · Lightmap ${WORLD.lmSize[0]}×${WORLD.lmSize[1]}`);
+  // Sonnenrichtung aus light_environment (fuer die Schattierung der Figuren)
+  const le = BSP.entities.find(e => e.classname === 'light_environment');
+  if (le) {
+    const yawR = vec3(le.angles)[1] * Math.PI / 180, pit = (le.pitch !== undefined ? +le.pitch : vec3(le.angles)[0]) * Math.PI / 180;
+    SUN = [-Math.cos(pit) * Math.cos(yawR), -Math.cos(pit) * Math.sin(yawR), -Math.sin(pit)];
+  }
+  await step(84, 'Lade Terroristen …');
+  const mp = await loadPack('models');
+  SEQ_NAMES = mp.man.seqs.map(q => q.name);
+  for (const m of mp.man.models) MODELS.push(await buildModel(m, mp.part));
+  await step(92, 'Berechne Wegnetz …');
+  const tNav = performance.now();
+  buildNav();
+  const navMs = Math.round(performance.now() - tNav);
+  await step(100, `Bereit · ${WORLD.tris.toLocaleString('de-DE')} Dreiecke · Wegnetz ${NAV.n.toLocaleString('de-DE')} Knoten (${navMs} ms)`);
   const sb = $('#startBtn');
   sb.disabled = false;
   sb.addEventListener('click', () => {
     $('#start').classList.remove('show');
     $('#hud').classList.add('show');
     playing = true;
+    restartRound();
     refreshMenu();
     toast(IS_TOUCH ? 'Links laufen · rechts umschauen' : 'Klick ins Bild fängt die Maus');
   });
   requestAnimationFrame(t => { last = t; frame(t); });
   // Test-Schnittstelle (fuer automatische Tests)
-  window.__cs = { player, input, teleport, trace, SPOTS, WORLD, BSP, start: () => sb.click(), setLight: v => LIGHT.splice(0, 3, ...v) };
+  window.__cs = { player, input, teleport, trace, SPOTS, WORLD, BSP, NAV, game, USP, get enemies() { return enemies; }, settings,
+    start: () => sb.click(), setLight: v => LIGHT.splice(0, 3, ...v) };
 })();
 </script>
 </body>
