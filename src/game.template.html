@@ -172,7 +172,7 @@
 <div class="overlay show" id="start">
   <div class="box">
     <h1>COUNTER-SURVIVORS</h1>
-    <p class="muted">Props &amp; Radar · v__VERSION__</p>
+    <p class="muted">Jetzt mit Sound · v__VERSION__</p>
     <div class="maps" id="mapPick"></div>
     <div class="barwrap"><div class="barfill" id="loadbar"></div></div>
     <p class="muted" id="loadtxt">Lade Map …</p>
@@ -206,6 +206,7 @@
     <h2>Teleport</h2>
     <div class="grid" id="tpGrid"></div>
     <h2>Einstellungen</h2>
+    <div class="rowline"><span style="min-width:120px">Lautstärke</span><input type="range" id="vol" min="0" max="1" step="0.05"><span id="volVal" style="min-width:36px;text-align:right"></span></div>
     <div class="rowline"><span style="min-width:120px">Empfindlichkeit</span><input type="range" id="sens" min="0.3" max="2.5" step="0.05"><span id="sensVal" style="min-width:36px;text-align:right"></span></div>
     <div class="grid">
       <button id="resBtn"></button>
@@ -231,6 +232,7 @@
 <script id="pack" type="application/octet-stream">__PACK__</script>
 <script id="models" type="application/octet-stream">__MODELS__</script>
 <script id="icons" type="application/json">__ICONS__</script>
+<script id="sounds" type="application/octet-stream">__SOUNDS__</script>
 <script>
 'use strict';
 // =====================================================================
@@ -255,7 +257,7 @@ const aniso = gl.getExtension('EXT_texture_filter_anisotropic');
 
 // ---------------------------------------------------------------- Einstellungen (lokal, optional)
 const SETTINGS_KEY = 'countersurvivors.settings.v1';
-const settings = Object.assign({ sens: 1, res: 1, fps: true, autoBhop: false, enemies: 2, radar: true }, (() => {
+const settings = Object.assign({ sens: 1, res: 1, fps: true, autoBhop: false, enemies: 2, radar: true, vol: 0.8 }, (() => {
   try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}; } catch (e) { return {}; }
 })());
 const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* egal */ } };
@@ -1165,6 +1167,7 @@ function buildNav() {
       const mt = BSP.miptex[BSP.texinfo.mip[f.texinfo]];
       if (!mt || mt.name.startsWith('sky')) continue;
       const info = faceLightInfo(f);
+      const soft = /sand|dirt|grav|grass|mud|snow/.test(mt.name) ? 1 : 0;   // Schrittgeraeusch: weicher Boden
       const vs = info.vs.map(v => [v[0] + src.o[0], v[1] + src.o[1], v[2] + src.o[2]]);
       const d = BSP.planes.d[pl] * sg + nx * src.o[0] + ny * src.o[1] + nz * src.o[2];
       let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
@@ -1194,7 +1197,7 @@ function buildNav() {
           if (o + 2 < BSP.lighting.length) { lr = BSP.lighting[o]; lg = BSP.lighting[o + 1]; lb = BSP.lighting[o + 2]; }
         }
         const ci = iy * W + ix;
-        (cols[ci] || (cols[ci] = [])).push([z, lr, lg, lb]);
+        (cols[ci] || (cols[ci] = [])).push([z, lr, lg, lb, soft]);
       }
     }
   }
@@ -1207,13 +1210,14 @@ function buildNav() {
     const merged = [];
     for (const e of c) { const last = merged[merged.length - 1]; if (last && e[0] - last[0] < 8) merged[merged.length - 1] = e; else merged.push(e); }
     colStart[ci] = nodes.length; colCount[ci] = Math.min(255, merged.length);
-    for (const e of merged.slice(0, 255)) nodes.push([ci % W, (ci / W) | 0, e[0], e[1], e[2], e[3]]);
+    for (const e of merged.slice(0, 255)) nodes.push([ci % W, (ci / W) | 0, e[0], e[1], e[2], e[3], e[4]]);
   }
   const N = nodes.length;
-  const nx = new Float32Array(N), ny = new Float32Array(N), nzA = new Float32Array(N), light = new Float32Array(N * 3);
+  const nx = new Float32Array(N), ny = new Float32Array(N), nzA = new Float32Array(N), light = new Float32Array(N * 3), mat = new Uint8Array(N);
   const cix = new Int32Array(N), ciy = new Int32Array(N);
   for (let i = 0; i < N; i++) {
-    const [ix, iy, z, r, g, b] = nodes[i];
+    const [ix, iy, z, r, g, b, soft] = nodes[i];
+    mat[i] = soft;
     cix[i] = ix; ciy[i] = iy; nx[i] = ox + ix * CELL + CELL / 2; ny[i] = oy + iy * CELL + CELL / 2; nzA[i] = z;
     light[i * 3] = lmToLight(r); light[i * 3 + 1] = lmToLight(g); light[i * 3 + 2] = lmToLight(b);
   }
@@ -1236,7 +1240,7 @@ function buildNav() {
       nbr[i * 8 + k] = j;
     }
   }
-  Object.assign(NAV, { n: N, ox, oy, W, H, colStart, colCount, x: nx, y: ny, z: nzA, light, cix, ciy, nbr, findIn,
+  Object.assign(NAV, { n: N, ox, oy, W, H, colStart, colCount, x: nx, y: ny, z: nzA, light, mat, cix, ciy, nbr, findIn,
     dist: new Float32Array(N).fill(Infinity), reach: [], heap: new Int32Array(N + 1), heapPos: new Int32Array(N) });
 }
 
@@ -1371,7 +1375,7 @@ function updateDirector(dt) {
   const B = BOSSES[game.bossIdx];
   if (B && game.time >= B.t && !game.boss) {
     const e = spawnEnemy(B.key, spawnNode(), { boss: B });
-    if (e) { game.boss = e; game.bossIdx++; toast(B.name + ' ist da!'); }
+    if (e) { game.boss = e; game.bossIdx++; toast(B.name + ' ist da!'); if (e.boss.kind === 'bomber') sfx('bombpl', { vol: 0.9, important: true }); else sfx('death6', { pos: [e.x, e.y, e.z + 60], vol: 1, pitch: 0.6, far: 5000, important: true }); }
   }
 }
 
@@ -1408,9 +1412,9 @@ function updateEnemies(dt) {
       const s = setSeq(e, 'ref_aim_ak47');
       e.f += dt * e.m.seqs[s].fps;
       e.shootCd -= dt;
-      if (e.shootCd <= 0) { e.shootCd = 1.8 + Math.random() * 0.8; enemyShot(e, eye, 0.04, 480, e.dmg); }
+      if (e.shootCd <= 0) { e.shootCd = 1.8 + Math.random() * 0.8; enemyShot(e, eye, 0.04, 480, e.dmg); sfx('ak47', { pos: [e.x, e.y, e.z + 56], vol: 0.55, gap: 0.05 }); }
     } else if (mode === 'fuse') {
-      if (e.fuse < 0) e.fuse = 0.75;
+      if (e.fuse < 0) { e.fuse = 0.75; sfx('c4_beep1', { pos: [e.x, e.y, e.z + 40], vol: 0.6, gap: 0.1, pitch: 1.3 }); }
       e.fuse -= dt; e.flash = (Math.floor(e.fuse * 12) % 2) ? 0.9 : 0;
       setSeq(e, 'idle1'); e.f += dt * 15;
       if (e.fuse <= 0) { explode([e.x, e.y, e.z + 30], 150, 250, 22, null); damageEnemy(e, 1e9, false, null); continue; }
@@ -1522,27 +1526,31 @@ function damageEnemy(e, dmg, head, w, quiet) {
   const real = Math.min(dmg, e.hp);
   if (w) w.dmg += real;
   e.hp -= dmg; if (!quiet) e.flash = 1;
+  if (!quiet && e.hp > 0) sfx(head ? 'headshot' : 'bhit_flesh', { pos: [e.x, e.y, e.z + 40], vol: head ? 0.55 : 0.4, gap: head ? 0.06 : 0.05 });
   if (e.hp > 0) return false;
+  sfx(head ? 'headshot' : 'die', { pos: [e.x, e.y, e.z + 40], vol: e.boss ? 1 : 0.5, gap: e.boss ? 0 : 0.11, pitch: e.boss ? 0.75 : 1, important: !!e.boss });
   e.state = DYING; e.t = 0; e.f = 0; e.fuse = -1;
   e.seq = e.m.seq[head ? 'head' : DEATHS[(Math.random() * DEATHS.length) | 0]];
   game.kills++;
   if (w) w.kills++;
   dropLoot(e);
-  if (e === game.boss) { game.boss = null; toast(e.boss.name + ' besiegt!'); }
+  if (e === game.boss) { game.boss = null; toast(e.boss.name + ' besiegt!'); sfx('enemydown', { vol: 0.8, delay: 0.5, important: true }); }
   return true;
 }
 
 function hurtPlayer(dmg) {
   if (game.over) return;
   game.hurt = 1;
+  sfx(game.passives.kevlar ? 'bhit_kevlar' : 'bhit_flesh', { vol: 0.55, gap: 0.22, important: true });
   if (game.god) return;
   game.hp = Math.max(0, game.hp - Math.max(1, Math.round(dmg * (1 - 0.08 * (game.passives.kevlar || 0)))));
   if (game.hp <= 0) endRound(false);
 }
 
 // Explosion: Schaden an Gegnern (ohne Sichtpruefung) und optional am Spieler
-function explode(pos, radius, enemyDmg, playerDmg, w) {
+function explode(pos, radius, enemyDmg, playerDmg, w, snd = 'explode') {
   fx.push({ type: 'boom', p: pos, r: radius, t: 0, life: 0.7 });
+  sfx(snd, { pos, vol: snd === 'c4_explode' ? 1 : 0.85, gap: 0.06, far: 3500, important: true });
   for (const e of enemies) {
     if (e.state !== ALIVE) continue;
     const d = Math.hypot(e.x - pos[0], e.y - pos[1], e.z + 36 - pos[2]);
@@ -1596,6 +1604,9 @@ function updateDrops(dt) {
   drops = drops.filter(d => !d.dead);
 }
 function collect(d) {
+  if (d.kind === 'cash') sfx('tick', { vol: 0.22 + 0.03 * d.val, gap: 0.035, pitch: d.val >= 10 ? 1.25 : d.val >= 5 ? 1.1 : 1 });
+  else if (d.kind === 'chest') sfx('m3_pump', { vol: 0.7 });
+  else sfx('tr_kevlar', { vol: 0.6 });
   if (d.kind === 'cash') addXp(d.val);
   else if (d.kind === 'kevlar') { game.hp = Math.min(game.maxHp, game.hp + 30); toast('Kevlarweste: +30 HP'); }
   else if (d.kind === 'kit') { for (const o of drops) if (o.kind === 'cash') o.fly = true; toast('Defuse-Kit-Tasche: alles Geld eingesammelt'); }
@@ -1893,15 +1904,15 @@ function updateWeapons(dt) {
   for (const w of game.weapons) {
     const S = w.st, D = WDEF[w.id];
     w.cd -= dt;
-    if (w.reload > 0) { w.reload -= dt; if (w.reload <= 0) w.mag = S.mag; continue; }
-    const useAmmo = () => { if (S.noReload) return; w.mag--; if (w.mag <= 0) w.reload = S.reload; };
+    if (w.reload > 0) { w.reload -= dt; if (w.reload <= 0) { w.mag = S.mag; reloadSound(w, false); } continue; }
+    const useAmmo = () => { if (S.noReload) return; w.mag--; if (w.mag <= 0) { w.reload = S.reload; reloadSound(w, true); } };
     if (D.kind === 'single' && w.cd <= 0) {
       const list = S.wallbang ? fovTargets(S.range) : visibleTargets(S.range, 1 + S.extra);
-      if (list.length) { w.cd = S.int; gunShot(w, list[0], list); shotThisFrame = true; useAmmo(); }
+      if (list.length) { w.cd = S.int; gunShot(w, list[0], list); shotThisFrame = true; weaponSound(w); useAmmo(); }
     } else if (D.kind === 'spray' && w.cd <= 0) {
       const list = visibleTargets(S.range, 6);
       if (list.length) {
-        w.cd = S.int; shotThisFrame = true;
+        w.cd = S.int; shotThisFrame = true; weaponSound(w);
         const c = list[(Math.random() * list.length) | 0];
         gunShot(w, c, null);
         for (let k = 0; k < S.extra; k++) hitscan(w, list[(Math.random() * list.length) | 0], S.dmg, S.hs);
@@ -1914,21 +1925,21 @@ function updateWeapons(dt) {
         const c = nearestInDir(p.yaw + o, S.range);
         if (c) { hitscan(w, c, S.dmg, S.hs); fired = true; }
       }
-      if (fired) { w.cd = S.int; shotThisFrame = true; useAmmo(); }
+      if (fired) { w.cd = S.int; shotThisFrame = true; weaponSound(w); useAmmo(); }
     } else if (D.kind === 'burst') {
       if (w.burst > 0) {
         w.burstT -= dt;
         if (w.burstT <= 0) {
           const T = visibleTargets(S.range, 4);
-          if (T.length) { hitscan(w, T[w.burst % T.length], S.dmg, S.hs); shotThisFrame = true; w.mag--; }
+          if (T.length) { hitscan(w, T[w.burst % T.length], S.dmg, S.hs); shotThisFrame = true; weaponSound(w); w.mag--; }
           w.burst--; w.burstT = 0.05;
-          if (w.mag <= 0) { w.reload = S.reload; w.burst = 0; }
+          if (w.mag <= 0) { w.reload = S.reload; w.burst = 0; reloadSound(w, true); }
         }
       } else if (w.cd <= 0 && visibleTargets(S.range, 1).length) { w.burst = Math.round(S.burst); w.burstT = 0; w.cd = S.int; }
     } else if (D.kind === 'shotgun' && w.cd <= 0) {
       const [c] = visibleTargets(S.range, 1);
       if (c) {
-        w.cd = S.int; shotThisFrame = true;
+        w.cd = S.int; shotThisFrame = true; weaponSound(w); sfx('m3_pump', { vol: 0.28, delay: 0.42 });
         const eye = eyePos(), a0 = Math.atan2(c.e.y - eye[1], c.e.x - eye[0]);
         const hits = enemies.filter(e => {
           if (e.state !== ALIVE) return false;
@@ -1952,6 +1963,7 @@ function updateWeapons(dt) {
       const near = enemies.filter(e => e.state === ALIVE && Math.abs(e.z - feet) < 48 * e.scale && Math.hypot(e.x - p.o[0], e.y - p.o[1]) < S.range + 16 * (e.scale - 1));
       if (near.length || w.evo) {
         w.cd = S.int;
+        if (near.length) sfx('knife_hit', { vol: 0.45, gap: 0.08 }); else sfx('knife_slash', { vol: 0.35 });
         for (const e of near) damageEnemy(e, S.dmg, false, w, w.evo);
         if (near.length || Math.random() < 0.3) fx.push({ type: 'slash', o: [p.o[0], p.o[1], p.o[2] + 2], a: p.yaw + Math.random() * 6.28, r: S.range, t: 0, life: w.evo ? 0.3 : 0.22 });
       }
@@ -1968,6 +1980,7 @@ function updateWeapons(dt) {
         if (node < 0 && k > 0) continue;
         c4s.push({ p: [x, y, (node >= 0 ? NAV.z[node] : feet) + 3], t: 0, fuse: S.fuse, r: S.radius, dmg: S.dmg, pdmg: 0, w });
       }
+      sfx('c4_plant', { vol: 0.6 }); sfx('c4_beep1', { vol: 0.25, delay: 0.25 });
     }
     // dauerhafte Effekte der Evolutionen
     if (D.kind === 'flash' && S.aura) {
@@ -1987,17 +2000,19 @@ function updateWeapons(dt) {
 
 function landNade(n) {
   const S = n.w ? n.w.st : null;
-  if (n.c4) c4s.push({ p: n.to, t: 0, fuse: 2.4, r: 190, dmg: 300, pdmg: 30, w: null });
+  if (n.c4) { c4s.push({ p: n.to, t: 0, fuse: 2.4, r: 190, dmg: 300, pdmg: 30, w: null }); sfx('c4_plant', { pos: n.to, important: true }); sfx('c4_beep1', { pos: n.to, delay: 0.3, important: true }); }
   else if (n.kind === 'flash') {
     for (const e of enemies) {
       if (e.state !== ALIVE) continue;
       if (Math.hypot(e.x - n.to[0], e.y - n.to[1]) < S.radius) { e.stun = Math.max(e.stun || 0, e.boss ? S.stun * 0.3 : S.stun); damageEnemy(e, S.dmg, false, n.w); }
     }
     fx.push({ type: 'flashfx', p: n.to, r: S.radius, t: 0, life: 0.45 });
+    sfx('flashbang', { pos: n.to, vol: 0.8, far: 3000 });
   } else if (n.kind === 'smoke') {
     zones.push({ p: n.to, r: S.radius, t: 0, dur: S.dur, w: n.w, seed: Math.random() * 100 });
+    sfx('sg_explode', { pos: n.to, vol: 0.8 });
   } else {
-    explode(n.to, S.radius, S.dmg, 0, n.w);
+    explode(n.to, S.radius, S.dmg, 0, n.w, 'hegrenade');
     if (S.cluster) for (let k = 0; k < 4; k++) {
       const a = k * Math.PI / 2 + Math.random() * 0.6;
       delayed.push({ t: 0.22 + k * 0.06, p: [n.to[0] + Math.cos(a) * S.radius * 0.6, n.to[1] + Math.sin(a) * S.radius * 0.6, n.to[2]], r: S.radius * 0.55, dmg: S.dmg * 0.5, w: n.w });
@@ -2008,7 +2023,13 @@ function landNade(n) {
 function updateNades(dt) {
   for (const n of nades) { n.t += dt; if (n.t >= n.dur && !n.landed) { n.landed = true; landNade(n); } }
   nades = nades.filter(n => !n.landed);
-  for (const c of c4s) { c.t += dt; if (c.t >= c.fuse) { c.dead = true; explode([c.p[0], c.p[1], c.p[2] + 10], c.r, c.dmg, c.pdmg, c.w); } }
+  for (const c of c4s) {
+    c.t += dt;
+    // Piepen wird schneller, je naeher die Zuendung
+    c.beep = (c.beep === undefined ? 0.5 : c.beep) - dt;
+    if (c.beep <= 0) { const left = c.fuse - c.t; c.beep = Math.max(0.12, left * 0.35); sfx('tick', { pos: c.p, vol: 0.5, pitch: 0.55 }); }
+    if (c.t >= c.fuse) { c.dead = true; explode([c.p[0], c.p[1], c.p[2] + 10], c.r, c.dmg, c.pdmg, c.w, 'c4_explode'); }
+  }
   c4s = c4s.filter(c => !c.dead);
   for (const d of delayed) { d.t -= dt; if (d.t <= 0) { d.dead = true; explode(d.p, d.r, d.dmg, 0, d.w); } }
   delayed = delayed.filter(d => !d.dead);
@@ -2040,6 +2061,8 @@ const keys = new Set();
 let pointerLocked = false;
 let playing = false;
 
+addEventListener('pointerdown', () => { if (SND.ctx && SND.ctx.state !== 'running') SND.ctx.resume().catch(() => {}); }, { capture: true });
+addEventListener('keydown', () => { if (SND.ctx && SND.ctx.state !== 'running') SND.ctx.resume().catch(() => {}); }, { capture: true });
 canvas.addEventListener('pointerdown', e => {
   if (!playing) return;
   if (e.pointerType === 'mouse') {
@@ -2133,6 +2156,7 @@ $('#ctrlHint2').textContent = IS_TOUCH ? CTRL_TOUCH : CTRL_PC;
 
 function refreshMenu() {
   $('#sens').value = settings.sens; $('#sensVal').textContent = settings.sens.toFixed(2) + '×';
+  $('#vol').value = settings.vol; $('#volVal').textContent = Math.round(settings.vol * 100) + ' %';
   $('#resBtn').textContent = 'Auflösung ' + Math.round(RESOLUTIONS[settings.res] * 100) + '%';
   $('#fpsBtn').textContent = 'fps-Anzeige: ' + (settings.fps ? 'an' : 'aus');
   $('#fpsBtn').classList.toggle('on', settings.fps);
@@ -2150,6 +2174,8 @@ function refreshMenu() {
   }).join('');
 }
 $('#sens').addEventListener('input', e => { settings.sens = +e.target.value; saveSettings(); refreshMenu(); });
+$('#vol').addEventListener('input', e => { settings.vol = +e.target.value; saveSettings(); refreshMenu(); if (SND.master) SND.master.gain.value = settings.vol; });
+$('#vol').addEventListener('change', () => sfx('boltpull1', { vol: 0.8 }));
 $('#resBtn').addEventListener('click', () => { settings.res = (settings.res + 1) % RESOLUTIONS.length; saveSettings(); refreshMenu(); });
 $('#fpsBtn').addEventListener('click', () => { settings.fps = !settings.fps; saveSettings(); refreshMenu(); });
 $('#bhopBtn').addEventListener('click', () => { settings.autoBhop = !settings.autoBhop; saveSettings(); refreshMenu(); });
@@ -2457,6 +2483,73 @@ function drawRadar() {
   x.beginPath(); x.moveTo(R, R - 5 * dpr); x.lineTo(R + 3.6 * dpr, R + 4 * dpr); x.lineTo(R, R + 2.2 * dpr); x.lineTo(R - 3.6 * dpr, R + 4 * dpr); x.closePath(); x.fill(); x.stroke();
 }
 
+// ---------------------------------------------------------------- Sound (Web Audio, Original-WAVs als 8-Bit-PCM)
+const SND = { ctx: null, master: null, buf: {}, groups: {}, last: {}, chan: {}, voices: 0, raw: null, pan: false };
+const SND_GROUP = n => n === 'death6' ? 'die' : n.replace(/-?\d+$/, '');
+function audioInit() {
+  if (SND.ctx) { if (SND.ctx.state !== 'running') SND.ctx.resume().catch(() => {}); return; }
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC || !SND.raw) return;
+  const ctx = SND.ctx = new AC();
+  const comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -14; comp.knee.value = 10; comp.ratio.value = 4; comp.attack.value = 0.003; comp.release.value = 0.2;
+  SND.master = ctx.createGain(); SND.master.gain.value = settings.vol;
+  SND.master.connect(comp); comp.connect(ctx.destination);
+  SND.pan = typeof ctx.createStereoPanner === 'function';
+  const { man, part } = SND.raw;
+  for (const [k, r] of Object.entries(man.sounds)) {
+    const pcm = new Uint8Array(part(r.data));
+    if (!pcm.length) continue;
+    const b = ctx.createBuffer(1, pcm.length, r.rate), ch = b.getChannelData(0);
+    for (let i = 0; i < pcm.length; i++) ch[i] = (pcm[i] - 128) / 128;
+    SND.buf[k] = b;
+    (SND.groups[SND_GROUP(k)] || (SND.groups[SND_GROUP(k)] = [])).push(k);
+  }
+  // kurzer "Tick" fuer Geld (nicht im Original enthalten)
+  const tick = ctx.createBuffer(1, Math.round(ctx.sampleRate * 0.06), ctx.sampleRate), td = tick.getChannelData(0);
+  for (let i = 0; i < td.length; i++) { const t = i / ctx.sampleRate; td[i] = Math.sin(t * 2 * Math.PI * 2100) * Math.exp(-t * 70) * 0.5 + Math.sin(t * 2 * Math.PI * 3150) * Math.exp(-t * 90) * 0.25; }
+  SND.buf.tick = tick; SND.groups.tick = ['tick'];
+  if (ctx.state !== 'running') ctx.resume().catch(() => {});
+}
+// name: Datei oder Gruppe (z. B. 'die' -> die1..3 + death6). opt: pos, vol, gap (Mindestabstand je Gruppe), chan (ersetzt vorherigen Ton), delay, pitch
+function sfx(name, opt = {}) {
+  const ctx = SND.ctx;
+  if (!ctx || ctx.state !== 'running' || settings.vol <= 0) return;
+  const list = SND.buf[name] ? [name] : SND.groups[name];
+  if (!list) return;
+  const now = ctx.currentTime, gap = opt.gap || 0;
+  if (gap && SND.last[name] !== undefined && now - SND.last[name] < gap) return;
+  if (SND.voices > 40 && !opt.chan && !opt.important) return;
+  let vol = opt.vol === undefined ? 1 : opt.vol, pan = 0;
+  if (opt.pos) {
+    const dx = opt.pos[0] - player.o[0], dy = opt.pos[1] - player.o[1], dz = (opt.pos[2] || player.o[2]) - player.o[2];
+    const d = Math.hypot(dx, dy, dz), far = opt.far || 2400;
+    if (d > far) return;
+    vol *= Math.min(1, 1 / (1 + d / 380)) * (1 - d / far);
+    if (d > 8) pan = -Math.sin(Math.atan2(dy, dx) - player.yaw) * Math.min(1, d / 200) * 0.75;
+  }
+  if (vol < 0.02) return;
+  SND.last[name] = now;
+  const src = ctx.createBufferSource();
+  src.buffer = SND.buf[list[(Math.random() * list.length) | 0]];
+  src.playbackRate.value = (opt.pitch || 1) * (1 + (Math.random() - 0.5) * (opt.vary === undefined ? 0.06 : opt.vary));
+  const g = ctx.createGain(); g.gain.value = vol;
+  src.connect(g);
+  if (SND.pan && pan) { const p = ctx.createStereoPanner(); p.pan.value = pan; g.connect(p); p.connect(SND.master); } else g.connect(SND.master);
+  if (opt.chan) { const old = SND.chan[opt.chan]; if (old) { try { old.stop(now + (opt.delay || 0) + 0.01); } catch (e) { /* schon fertig */ } } SND.chan[opt.chan] = src; }
+  SND.voices++;
+  src.onended = () => { SND.voices--; if (opt.chan && SND.chan[opt.chan] === src) SND.chan[opt.chan] = null; };
+  src.start(now + (opt.delay || 0));
+}
+const WSND = { usp: 'usp_unsil', glock: 'glock18', deagle: 'deagle', mp5: 'mp5', m3: 'm3', ak47: 'ak47', awp: 'awp', m249: 'm249', elites: 'elite_fire' };
+const WVOL = { usp: 0.42, glock: 0.38, deagle: 0.5, mp5: 0.34, m3: 0.55, ak47: 0.42, awp: 0.6, m249: 0.36, elites: 0.38 };
+function weaponSound(w) { const n = WSND[w.id]; if (n) sfx(n, { vol: WVOL[w.id], chan: 'w_' + w.id, vary: 0.04 }); }
+function reloadSound(w, start) {
+  if (w.id === 'm3') { if (start) for (let k = 0; k < 3; k++) sfx('m3_insertshell', { vol: 0.3, delay: 0.25 + k * 0.5 }); else sfx('m3_pump', { vol: 0.35 }); }
+  else if (w.id === 'awp') sfx(start ? 'usp_clipout' : 'boltpull1', { vol: 0.35 });
+  else sfx(start ? 'usp_clipout' : 'usp_clipin', { vol: 0.3 });
+}
+
 // ---------------------------------------------------------------- Sprites (Geld, Pickups, Kisten, Granaten, C4)
 const progSprite = program(`#version 300 es
 precision highp float;
@@ -2717,6 +2810,25 @@ function frame(now) {
   drawRadar();
 }
 
+function updateAmbientSounds(dt) {
+  if (game.over) return;
+  const p = player, spd = Math.hypot(p.v[0], p.v[1]);
+  // Schritte wie CS: nur beim Rennen (nicht beim Gehen mit Shift), ca. alle 0,3 s
+  if (p.onGround && spd > 150) {
+    game.stepT = (game.stepT || 0) - dt * spd / 250;
+    if (game.stepT <= 0) {
+      game.stepT = 0.32;
+      const soft = game.playerNode >= 0 && NAV.mat[game.playerNode];
+      sfx(soft ? 'pl_dirt' : 'pl_step', { vol: 0.32, vary: 0.08 });
+    }
+  } else game.stepT = Math.min(game.stepT || 0, 0.1);
+  // Geiseln rufen (Maps mit hostage_entity)
+  if (SPOTS.h && MAP.id !== 'de_dust_cz') {
+    game.hosT = (game.hosT === undefined ? 6 : game.hosT) - dt;
+    if (game.hosT <= 0) { game.hosT = 7 + Math.random() * 9; sfx('hos', { pos: SPOTS.h.o, vol: 0.75, far: 1800 }); }
+  }
+}
+
 function updateGame(dt) {
   frameNo++;
   // Flow-Field 4x pro Sekunde (oder sofort, wenn der Spieler den Knoten wechselt)
@@ -2726,6 +2838,7 @@ function updateGame(dt) {
   game.flowT -= dt;
   if (pn >= 0 && (game.flowT <= 0 || (pn !== game.playerNode && game.flowT < 0.15))) { game.playerNode = pn; updateFlow(pn); game.flowT = 0.25; }
   if (game.time > 1.5) updateDirector(dt);
+  updateAmbientSounds(dt);
   updateEnemies(dt);
   updateWeapons(dt);
   updateShots(dt);
@@ -2816,6 +2929,7 @@ let buyKeys = null;
 function pickOffer(o) {
   if (!buyOpen) return;
   applyOffer(o);
+  sfx('boltpull1', { vol: 0.6 });
   game.pending = Math.max(0, game.pending - 1);
   $('#buy').classList.remove('show');
   buyOpen = false; buyKeys = null;
@@ -2830,6 +2944,7 @@ function endRound(won) {
   input.fwd = input.side = 0;
   if (won) for (const e of enemies) if (e.state === ALIVE) { e.state = DYING; e.t = 0; e.f = 0; e.seq = e.m.seq[DEATHS[(Math.random() * DEATHS.length) | 0]]; }
   if (won) toast('Counter-Terrorists Win');
+  sfx(won ? 'ctwin' : 'terwin', { vol: 0.9, delay: won ? 0.4 : 0.9, important: true });
   setTimeout(() => {
     $('#endTitle').textContent = won ? 'COUNTER-TERRORISTS WIN' : 'GEFALLEN';
     $('#endTitle').classList.toggle('win', won);
@@ -2850,6 +2965,8 @@ function restartRound() {
   teleport('ct');
   $('#dead').classList.remove('show'); $('#buy').classList.remove('show'); buyOpen = false;
   hudCache = ''; barCache = '';
+  game.stepT = 0; game.hosT = 6;
+  sfx(Math.random() < 0.5 ? 'locknload' : 'moveout', { vol: 0.85, delay: 0.35, important: true });
 }
 $('#againBtn').addEventListener('click', () => { restartRound(); playing = true; });
 function refreshTestMenu() {
@@ -2909,6 +3026,7 @@ $('#restartBtn').addEventListener('click', () => { restartRound(); togglePause(f
   SEQ_NAMES = mp.man.seqs.map(q => q.name);
   for (const m of mp.man.models) MODELS.push(await buildModel(m, mp.part));
   await buildSpriteAtlas();
+  try { SND.raw = await loadPack('sounds'); } catch (err) { console.warn('Keine Sounds', err); }
   await step(92, 'Berechne Wegnetz …');
   const tNav = performance.now();
   buildNav();
@@ -2921,6 +3039,7 @@ $('#restartBtn').addEventListener('click', () => { restartRound(); togglePause(f
   const sb = $('#startBtn');
   sb.disabled = false;
   sb.addEventListener('click', () => {
+    audioInit();
     $('#start').classList.remove('show');
     $('#hud').classList.add('show');
     playing = true;
@@ -2931,7 +3050,7 @@ $('#restartBtn').addEventListener('click', () => { restartRound(); togglePause(f
   requestAnimationFrame(t => { last = t; frame(t); });
   // Test-Schnittstelle (fuer automatische Tests)
   window.__cs = { player, input, teleport, trace, SPOTS, WORLD, BSP, NAV, game, get enemies() { return enemies; }, settings,
-    get drops() { return drops; }, addXp, addWeapon, refreshStats, openChest, get zones() { return zones; }, dbg: () => JSON.stringify({nades: nades.length, c4: c4s.length, shots: eShots.length, fx: fx.length}), start: () => sb.click(), get PROPS() { return PROPS; }, RADAR, drawRadar, setLight: v => LIGHT.splice(0, 3, ...v) };
+    get drops() { return drops; }, addXp, addWeapon, refreshStats, openChest, get zones() { return zones; }, dbg: () => JSON.stringify({nades: nades.length, c4: c4s.length, shots: eShots.length, fx: fx.length}), start: () => sb.click(), get PROPS() { return PROPS; }, RADAR, drawRadar, SND, sfx, setLight: v => LIGHT.splice(0, 3, ...v) };
 })();
 </script>
 </body>
