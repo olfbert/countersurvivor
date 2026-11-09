@@ -189,7 +189,7 @@
 <div class="overlay show" id="start">
   <div class="box">
     <h1>COUNTER-SURVIVORS</h1>
-    <p class="muted">Roomba &amp; neue Maps · v0.9.2</p>
+    <p class="muted">Roomba &amp; neue Maps · v0.9.3</p>
     <div class="maps" id="mapPick"></div>
     <div class="barwrap"><div class="barfill" id="loadbar"></div></div>
     <p class="muted" id="loadtxt">Lade Map …</p>
@@ -219,7 +219,7 @@
 <div class="overlay" id="menu">
   <div class="box">
     <h1>PAUSE</h1>
-    <p class="muted">Counter-Survivors · v0.9.2</p>
+    <p class="muted">Counter-Survivors · v0.9.3</p>
     <h2>Teleport</h2>
     <div class="grid" id="tpGrid"></div>
     <h2>Einstellungen</h2>
@@ -259,7 +259,7 @@
 // BSP v30 wird zur Laufzeit gelesen: Geometrie, Lightmaps, Kollision, Entities.
 // Koordinaten wie in GoldSrc: Z zeigt nach oben, 1 Einheit ~ 1 Zoll.
 // =====================================================================
-const VERSION = '0.9.2';
+const VERSION = '0.9.3';
 const $ = s => document.querySelector(s);
 const err = msg => { $('#start').classList.add('show'); $('#err').textContent += msg + '\n'; };
 addEventListener('error', e => err('Fehler: ' + e.message + (e.lineno ? ' (Zeile ' + e.lineno + ')' : '')));
@@ -366,7 +366,7 @@ const MAPS = [
   { id: 'de_dust_cz', title: 'de_dust', sub: 'Condition Zero · Bombenentschärfung', file: null },
   { id: 'cs_assault', title: 'cs_assault', sub: 'Lagerhalle · Geiselrettung', file: 'maps/cs_assault.bin' },
   { id: 'cs_italy', title: 'cs_italy', sub: 'Italien · Geiselrettung', file: 'maps/cs_italy.bin', note: 'Texturen unvollständig' },
-  { id: 'de_rats_2001', title: 'de_rats', sub: 'Riesenküche · Bombenentschärfung', file: 'maps/de_rats_2001.bin', note: 'Texturen unvollständig' },
+  { id: 'de_rats_2001', title: 'de_rats', sub: 'Riesenküche · Bombenentschärfung', file: 'maps/de_rats_2001.bin' },
 ];
 const MAP = (() => {
   let id = null;

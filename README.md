@@ -11,6 +11,7 @@ Ego-Shooter im Stil von Counter-Strike 1.6, der sich wie Vampire Survivors spiel
 
 | Version | Phase | Inhalt |
 | --- | --- | --- |
+| v0.9.3 | de_rats komplett | Packer übernimmt jetzt in die BSP eingebaute Texturen (de_rats: Dosen, Schränke, Fliesen …) und Himmel aus gfx/env (`--sky ordner name`); de_rats mit Original-Himmel |
 | v0.9.2 | Leitern | Leitern hochklettern wie in CS (nach vorn drücken; Blick nach unten = runter; Springen = abspringen) |
 | v0.9.1 | Feinschliff | cs_italy mit allen Texturen; Roomba startet langsamer (105 statt 190, Stufen bis 205) |
 | v0.9 | Roomba & neue Maps | Roomba zum Kaufen: fährt übers Wegnetz zum nächsten Geldschein in Sicht und saugt ihn ein, sonst folgt er dir (Stufen: schneller, breiter, bis zu 3 Roombas; grün im Radar); Killfeed oben rechts (höchstens 5 Zeilen, normale Kills gedrosselt, Elites und Bosse immer); cs_747 raus, neu: cs_assault, cs_italy, de_rats; Wegnetz findet jetzt auch Treppen unter unsichtbaren Clip-Rampen (sonst kamen auf cs_italy keine Gegner) |
@@ -34,7 +35,7 @@ Als Nächstes: Rest von **Phase 4 · CS-Seele** (Bomben-Event auf A/B, Killfeed,
 | de_dust (Condition Zero) | in `index.html` eingebettet | vollständig, mit Deko-Modellen |
 | cs_assault | `maps/cs_assault.bin` | vollständig texturiert; Himmel ist Ersatz (city1 fehlt) |
 | cs_italy | `maps/cs_italy.bin` | vollständig texturiert (itsitaly.wad); Himmel Ersatz (green fehlt) |
-| de_rats | `maps/de_rats_2001.bin` | spielbar; Küchen-Texturen aus der de_rats-WAD fehlen, Himmel Ersatz (dusk) |
+| de_rats | `maps/de_rats_2001.bin` | vollständig: Küchen-Texturen stecken in der BSP selbst, Original-Himmel dusk |
 
 Weitere Maps sind nur Daten: BSP + WADs (+ Himmel, Deko-Modelle, Übersichtskarte) packen, in `maps/` legen und in der Map-Liste der Vorlage eintragen. Nachgeladene Maps funktionieren nur online (GitHub Pages), nicht als lokale Datei.
 

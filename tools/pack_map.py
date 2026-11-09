@@ -142,6 +142,7 @@ def main():
     ap.add_argument("out"); ap.add_argument("bsp")
     ap.add_argument("--wad", action="append", default=[])
     ap.add_argument("--sky-dust", help="Ordner mit img1..img6.jpg (de_dust, per Kantenabgleich zugeordnet)")
+    ap.add_argument("--sky", nargs=2, metavar=("ORDNER", "NAME"), help="Himmel aus gfx/env: NAMErt/ft/lf/bk/up.tga (oder .bmp)")
     ap.add_argument("--props", help="Ordner mit Deko-Modellen (.mdl) fuer cycler_sprite/env_model")
     ap.add_argument("--overview", help="Uebersichtskarte (CS-Overview mit gruenem Hintergrund) fuer das Radar")
     args = ap.parse_args()
@@ -161,6 +162,14 @@ def main():
     stripped = strip_bsp(bsp)
     man["bsp"] = add(stripped)
     widx = wad_index(args.wad)
+    # In die BSP eingebaute Texturen haben Vorrang (wie in der Engine)
+    o, l = struct.unpack_from("<ii", bsp, 4 + 2 * 8)
+    nmip = struct.unpack_from("<i", bsp, o)[0]
+    for of in struct.unpack_from(f"<{nmip}i", bsp, o + 4):
+        if of < 0:
+            continue
+        if struct.unpack_from("<I", bsp, o + of + 24)[0]:
+            widx[cstr(bsp[o + of:o + of + 16]).lower()] = (bsp, o + of)
     total = 0
     for t in bsp_textures(bsp):
         if t is None:
@@ -173,7 +182,7 @@ def main():
             img, masked = wad_image(widx[key][0], widx[key][1], name)
             data = png(img)
             man["textures"][key] = {"data": add(data), "w": img.width, "h": img.height, "masked": masked, "type": "image/png"}
-            src = "WAD"
+            src = "BSP" if widx[key][0] is bsp else "WAD"
         else:
             img, masked = fallback(name, w, h)
             data = png(img)
@@ -199,6 +208,32 @@ def main():
     # Zyklus nach rechts img2 -> img6 -> img5 -> img3; Oberkanten passen zum Up-Bild (img4).
     # Konvention im Renderer: rt=+X, ft=-Y, lf=-X, bk=+Y; Up-Bild: unterste Zeile (links->rechts) = Oberkante ft.
     # Mit skyYaw=+90 Grad liegt die Sonne bei ~233 Grad (Lightmaps: hellste Waende bei ~225 Grad).
+    if args.sky:
+        import os
+        d, name = args.sky
+        def load(suf):
+            for ext in (".tga", ".bmp", ".TGA", ".BMP", ".jpg"):
+                f = os.path.join(d, name + suf + ext)
+                if os.path.exists(f):
+                    return Image.open(f).convert("RGB")
+            raise FileNotFoundError(name + suf)
+        side = {k: load(k) for k in ("rt", "ft", "lf", "bk")}
+        up0 = load("up")
+        A = {k: np.asarray(v) for k, v in side.items()}
+        chain = sum(edge_diff(A[a][:, -1], A[b][:, 0]) for a, b in (("rt", "ft"), ("ft", "lf"), ("lf", "bk"), ("bk", "rt")))
+        # Up-Bild so drehen, dass seine unterste Zeile zur Oberkante von ft passt
+        best = min(range(4), key=lambda r: edge_diff(np.asarray(up0.rotate(90 * r))[-1], A["ft"][0]))
+        up = up0.rotate(90 * best)
+        print(f"Himmel {name}: Seitenkanten {chain / 4:.1f}, Up gedreht um {90 * best} Grad, Kante {edge_diff(np.asarray(up)[-1], A['ft'][0]):.1f}")
+        for k, v in {**side, "up": up}.items():
+            man["sky"][k] = add(jpg(v, 90))
+        man["skyYaw"] = 0
+        js = json.dumps(man, separators=(",", ":")).encode("utf-8")
+        while len(js) % 4:
+            js += b" "
+        open(out, "wb").write(struct.pack("<I", len(js)) + js + bytes(blobs))
+        print("Paket:", (4 + len(js) + len(blobs)) // 1024, "KB")
+        return
     if not args.sky_dust:
         man["sky"] = None
         js = json.dumps(man, separators=(",", ":")).encode("utf-8")
