@@ -11,6 +11,7 @@ Ego-Shooter im Stil von Counter-Strike 1.6, der sich wie Vampire Survivors spiel
 
 | Version | Phase | Inhalt |
 | --- | --- | --- |
+| v0.9.2 | Leitern | Leitern hochklettern wie in CS (nach vorn drücken; Blick nach unten = runter; Springen = abspringen) |
 | v0.9.1 | Feinschliff | cs_italy mit allen Texturen; Roomba startet langsamer (105 statt 190, Stufen bis 205) |
 | v0.9 | Roomba & neue Maps | Roomba zum Kaufen: fährt übers Wegnetz zum nächsten Geldschein in Sicht und saugt ihn ein, sonst folgt er dir (Stufen: schneller, breiter, bis zu 3 Roombas; grün im Radar); Killfeed oben rechts (höchstens 5 Zeilen, normale Kills gedrosselt, Elites und Bosse immer); cs_747 raus, neu: cs_assault, cs_italy, de_rats; Wegnetz findet jetzt auch Treppen unter unsichtbaren Clip-Rampen (sonst kamen auf cs_italy keine Gegner) |
 | v0.8.2 | Fixes | Turm wird richtig dargestellt (Außenhülle war teils unsichtbar, man sah ins Innere); auf Kisten, Fässern und anderen „Inseln“ ohne Weg kommen weiter Gegner: sie laufen zum Boden drumherum und schlagen nach oben |

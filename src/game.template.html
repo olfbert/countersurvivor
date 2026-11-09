@@ -692,7 +692,7 @@ function buildSky(yawDeg) {
 // Kollision: Hull-Traces (wie Quake/Half-Life)
 // =====================================================================
 const DIST_EPSILON = 0.03125;
-let BSP = null, SOLIDS = [];
+let BSP = null, SOLIDS = [], LADDERS = [];
 const HULL_MINS = [null, [-16, -16, -36], [-32, -32, -32], [-16, -16, -18]];
 const HULL_MAXS = [null, [16, 16, 36], [32, 32, 32], [16, 16, 18]];
 
@@ -871,6 +871,18 @@ function friction(dt) {
   const ns = Math.max(0, speed - control * MOVE.friction * dt) / speed;
   p.v[0] *= ns; p.v[1] *= ns; p.v[2] *= ns;
 }
+function touchingLadder() {
+  const o = player.o;
+  for (const L of LADDERS)
+    if (o[0] + 26 > L.mins[0] && o[0] - 26 < L.maxs[0] && o[1] + 26 > L.mins[1] && o[1] - 26 < L.maxs[1] && o[2] - 36 < L.maxs[2] && o[2] + 36 > L.mins[2]) return L;
+  return null;
+}
+// Richtung von der Leiter weg (zur Spielerseite), nur waagerecht
+function ladderNormal(L) {
+  const o = player.o, hx = (L.maxs[0] - L.mins[0]) / 2 + 16, hy = (L.maxs[1] - L.mins[1]) / 2 + 16;
+  const dx = o[0] - (L.mins[0] + L.maxs[0]) / 2, dy = o[1] - (L.mins[1] + L.maxs[1]) / 2;
+  return Math.abs(dx) / hx > Math.abs(dy) / hy ? [Math.sign(dx) || 1, 0, 0] : [0, Math.sign(dy) || 1, 0];
+}
 function playerMove(dt) {
   const p = player;
   categorize();
@@ -881,6 +893,21 @@ function playerMove(dt) {
     const spd = Math.hypot(p.v[0], p.v[1], p.v[2]), maxs = 1.7 * MOVE.maxspeed;
     if (spd > maxs) { const f = maxs / spd * 0.65; p.v[0] *= f; p.v[1] *= f; p.v[2] *= f; }
     p.v[2] = MOVE.jump; p.onGround = false;
+  }
+  // Leitern (PM_LadderMove): nach vorn druecken = klettern, Blick nach unten = runter, Springen = abspringen
+  const L = touchingLadder();
+  if (L) {
+    const n = ladderNormal(L), cp = Math.cos(p.pitch);
+    const f = [Math.cos(p.yaw) * cp, Math.sin(p.yaw) * cp, Math.sin(p.pitch)], r = [Math.sin(p.yaw), -Math.cos(p.yaw), 0];
+    const v = [0, 1, 2].map(i => (f[i] * input.fwd + r[i] * input.side) * 200);
+    if (p.jumpQueued) { p.v = [n[0] * 270, n[1] * 270, 60]; p.jumpQueued = false; flyMove(dt); categorize(); return; }
+    const dn = v[0] * n[0] + v[1] * n[1];
+    p.v = [v[0] - n[0] * dn, v[1] - n[1] * dn, v[2] - dn];
+    // beim Klettern leicht an die Leiter ziehen, damit man oben durch die Luke bzw. ueber die Kante kommt
+    if (dn < 0) { p.v[0] -= n[0] * 60; p.v[1] -= n[1] * 60; }
+    if (p.onGround && dn > 0) { p.v[0] += n[0] * 200; p.v[1] += n[1] * 200; }
+    flyMove(dt); categorize();
+    return;
   }
   p.jumpQueued = false;
   if (!p.onGround) p.v[2] -= MOVE.gravity * 0.5 * dt; else friction(dt);
@@ -3472,6 +3499,10 @@ $('#restartBtn').addEventListener('click', () => { restartRound(); togglePause(f
   // feste Brush-Entities fuer die Kollision
   SOLIDS = BSP.entities.filter(isSolidEnt)
     .map(e => ({ model: BSP.models[+e.model.slice(1)], origin: entOrigin(e, BSP.models[+e.model.slice(1)]), cls: e.classname }));
+  LADDERS = BSP.entities.filter(e => e.classname === 'func_ladder' && e.model && e.model[0] === '*').map(e => {
+    const m = BSP.models[+e.model.slice(1)], o = vec3(e.origin || '0 0 0');
+    return { mins: [m.mins[0] + o[0], m.mins[1] + o[1], m.mins[2] + o[2]], maxs: [m.maxs[0] + o[0], m.maxs[1] + o[1], m.maxs[2] + o[2]] };
+  });
   findSpots();
   findCsSpots();
   buildTeleportButtons();
@@ -3513,7 +3544,7 @@ $('#restartBtn').addEventListener('click', () => { restartRound(); togglePause(f
   requestAnimationFrame(t => { last = t; frame(t); });
   // Test-Schnittstelle (fuer automatische Tests)
   window.__cs = { player, input, teleport, trace, SPOTS, WORLD, BSP, NAV, game, get enemies() { return enemies; }, settings,
-    get drops() { return drops; }, addXp, addWeapon, refreshStats, openChest, get zones() { return zones; }, dbg: () => JSON.stringify({nades: nades.length, c4: c4s.length, shots: eShots.length, fx: fx.length}), start: () => sb.click(), get PROPS() { return PROPS; }, RADAR, drawRadar, SND, sfx, get turrets() { return turrets; }, placeTurret, flowFrom, get roombas() { return roombas; }, get drops() { return drops; },  setLight: v => LIGHT.splice(0, 3, ...v) };
+    get drops() { return drops; }, addXp, addWeapon, refreshStats, openChest, get zones() { return zones; }, dbg: () => JSON.stringify({nades: nades.length, c4: c4s.length, shots: eShots.length, fx: fx.length}), start: () => sb.click(), get PROPS() { return PROPS; }, RADAR, drawRadar, SND, sfx, get turrets() { return turrets; }, placeTurret, flowFrom, get roombas() { return roombas; }, get LADDERS() { return LADDERS; }, get drops() { return drops; },  setLight: v => LIGHT.splice(0, 3, ...v) };
 })();
 </script>
 </body>
