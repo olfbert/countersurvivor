@@ -212,7 +212,7 @@
 <div class="overlay show" id="start">
   <div class="box">
     <h1>COUNTER-SURVIVORS</h1>
-    <p class="muted">Mehrspieler · v0.11.1</p>
+    <p class="muted">Mehrspieler · v0.11.2</p>
     <div class="maps" id="mapPick"></div>
     <div class="barwrap"><div class="barfill" id="loadbar"></div></div>
     <p class="muted" id="loadtxt">Lade Map …</p>
@@ -260,7 +260,7 @@
 <div class="overlay" id="menu">
   <div class="box">
     <h1>PAUSE</h1>
-    <p class="muted">Counter-Survivors · v0.11.1</p>
+    <p class="muted">Counter-Survivors · v0.11.2</p>
     <h2>Teleport</h2>
     <div class="grid" id="tpGrid"></div>
     <h2>Einstellungen</h2>
@@ -301,7 +301,7 @@
 // BSP v30 wird zur Laufzeit gelesen: Geometrie, Lightmaps, Kollision, Entities.
 // Koordinaten wie in GoldSrc: Z zeigt nach oben, 1 Einheit ~ 1 Zoll.
 // =====================================================================
-const VERSION = '0.11.1';
+const VERSION = '0.11.2';
 const $ = s => document.querySelector(s);
 const err = msg => { $('#start').classList.add('show'); $('#err').textContent += msg + '\n'; };
 addEventListener('error', e => err('Fehler: ' + e.message + (e.lineno ? ' (Zeile ' + e.lineno + ')' : '')));
@@ -1787,7 +1787,7 @@ function dropLoot(e) {
   if (r < 0.012) drops.push({ kind: 'kevlar', x: e.x, y: e.y, z, t: 0 });
   else if (r < 0.016) drops.push({ kind: 'kit', x: e.x, y: e.y, z, t: 0 });
   else if (r < 0.022) drops.push({ kind: 'case', x: e.x, y: e.y, z, t: 0 });
-  if (drops.length > 500) drops.splice(0, drops.length - 500);
+  if (drops.length > 500) for (const d of drops.splice(0, drops.length - 500)) d.dead = true;
 }
 function addXp(v) {
   v *= 1 + 0.1 * ml('xp');
@@ -3054,17 +3054,130 @@ function drawRoombas(VP) {
 }
 function nodeLight(i) { return i >= 0 ? [NAV.light[i * 3], NAV.light[i * 3 + 1], NAV.light[i * 3 + 2]] : [1, 1, 1]; }
 // Einen Schritt Richtung (tx, ty); weicht Waenden aus, bleibt auf begehbarem Boden gleicher Hoehe
-function roombaStep(R, tx, ty, step) {
-  const want = Math.atan2(ty - R.y, tx - R.x);
-  for (const off of [0, 0.45, -0.45, 0.9, -0.9, 1.45, -1.45, 2.1, -2.1]) {
+// ---- Roomba-Navigation: A* auf dem Nav-Gitter + gerade Abkuerzungen (Zellen-DDA) ----
+const RP = { n: -1, g: null, from: null, seen: null, shut: null, gen: 0, exp: 0 };
+function navPath(a, b, maxExp = 4000) {
+  if (a < 0 || b < 0) return null;
+  if (a === b) return { path: [b], cost: 0 };
+  const N = NAV.n;
+  if (RP.n !== N) { RP.n = N; RP.g = new Float32Array(N); RP.from = new Int32Array(N); RP.seen = new Uint32Array(N); RP.shut = new Uint32Array(N); RP.gen = 0; }
+  const gen = ++RP.gen, G = RP.g, F = RP.from, seen = RP.seen, shut = RP.shut;
+  const bx = NAV.x[b], by = NAV.y[b], bz = NAV.z[b];
+  const hk = [], hv = [];
+  const push = (k, v) => { let i = hk.length; hk.push(k); hv.push(v); while (i > 0) { const p = (i - 1) >> 1; if (hk[p] <= k) break; hk[i] = hk[p]; hv[i] = hv[p]; i = p; } hk[i] = k; hv[i] = v; };
+  const pop = () => { const v = hv[0], k = hk.pop(), w = hv.pop(), n = hk.length; if (n) { let i = 0; for (;;) { let c = 2 * i + 1; if (c >= n) break; if (c + 1 < n && hk[c + 1] < hk[c]) c++; if (hk[c] >= k) break; hk[i] = hk[c]; hv[i] = hv[c]; i = c; } hk[i] = k; hv[i] = w; } return v; };
+  const h = i => Math.hypot(NAV.x[i] - bx, NAV.y[i] - by) + Math.abs(NAV.z[i] - bz) * 0.5;
+  seen[a] = gen; G[a] = 0; F[a] = -1; push(h(a), a);
+  let exp = 0;
+  while (hk.length) {
+    const i = pop();
+    if (shut[i] === gen) continue;
+    shut[i] = gen;
+    if (i === b) {
+      const path = []; for (let j = b; j !== a; j = F[j]) path.push(j);
+      path.reverse(); RP.exp += exp; return { path, cost: G[b] };
+    }
+    if (++exp > maxExp) break;
+    for (let k = 0; k < 8; k++) {
+      const j = NAV.nbr[i * 8 + k]; if (j < 0 || shut[j] === gen) continue;
+      const c = G[i] + (k < 4 ? CELL : CELL * 1.4142) + Math.abs(NAV.z[j] - NAV.z[i]) * 0.5;
+      if (seen[j] === gen && G[j] <= c) continue;
+      seen[j] = gen; G[j] = c; F[j] = i; push(c + h(j), j);
+    }
+  }
+  RP.exp += exp;
+  return null;
+}
+// Naechster Nav-Knoten zu einem Punkt (auch wenn der Punkt selbst in keiner begehbaren Zelle liegt, z.B. Geld in einer Ecke)
+function navNodeNear(x, y, zFeet, r = 2) {
+  let n = navNodeAt(x, y, zFeet, 24); if (n >= 0) return n;
+  const cx = Math.floor((x - NAV.ox) / CELL), cy = Math.floor((y - NAV.oy) / CELL);
+  let bd = Infinity;
+  for (let iy = cy - r; iy <= cy + r; iy++) for (let ix = cx - r; ix <= cx + r; ix++) {
+    const j = NAV.findIn(ix, iy, zFeet, 40); if (j < 0) continue;
+    const d = Math.hypot(NAV.x[j] - x, NAV.y[j] - y); if (d < bd) { bd = d; n = j; }
+  }
+  return n;
+}
+// Gerade Linie befahrbar? Alle beruehrten Zellen muessen einen Knoten mit stufenweise passender Hoehe haben
+function navLine(x0, y0, z0, x1, y1) {
+  let ix = Math.floor((x0 - NAV.ox) / CELL), iy = Math.floor((y0 - NAV.oy) / CELL);
+  const ex = Math.floor((x1 - NAV.ox) / CELL), ey = Math.floor((y1 - NAV.oy) / CELL);
+  const dx = x1 - x0, dy = y1 - y0, sx = Math.sign(dx), sy = Math.sign(dy);
+  const tdx = dx ? Math.abs(CELL / dx) : Infinity, tdy = dy ? Math.abs(CELL / dy) : Infinity;
+  const fx = (x0 - NAV.ox) / CELL - ix, fy = (y0 - NAV.oy) / CELL - iy;
+  let tx = dx ? (sx > 0 ? 1 - fx : fx) * tdx : Infinity, ty = dy ? (sy > 0 ? 1 - fy : fy) * tdy : Infinity;
+  let z = z0;
+  for (let guard = 0; guard < 64; guard++) {
+    const n = NAV.findIn(ix, iy, z, STEP_UP); if (n < 0) return false;
+    z = NAV.z[n];
+    if (ix === ex && iy === ey) return true;
+    if (tx < ty) { tx += tdx; ix += sx; } else { ty += tdy; iy += sy; }
+  }
+  return false;
+}
+function roombaStep(R, tx, ty, step, offs = [0, 0.45, -0.45, 0.9, -0.9, 1.45, -1.45, 2.1, -2.1]) {
+  const want = Math.atan2(ty - R.y, tx - R.x), zr = R.node >= 0 ? NAV.z[R.node] : R.z;
+  for (const off of offs) {
     const a = want + off, nx = R.x + Math.cos(a) * step, ny = R.y + Math.sin(a) * step;
-    const n = navNodeAt(nx, ny, R.z, 20);
-    if (n < 0 || Math.abs(NAV.z[n] - R.z) > 18) continue;
-    R.x = nx; R.y = ny; R.z += (NAV.z[n] - R.z) * 0.5; R.node = n;
+    const n = navNodeAt(nx, ny, zr, STEP_UP + 2);
+    if (n < 0) continue;
+    if (n !== R.node && R.node >= 0 && !navLine(R.x, R.y, zr, nx, ny)) continue;
+    R.x = nx; R.y = ny; R.node = n;
     let dy = a - R.yaw; dy = ((dy + Math.PI * 3) % (Math.PI * 2)) - Math.PI; R.yaw += dy * 0.25;
     return true;
   }
   return false;
+}
+// Ziel (Knoten + Endpunkt) setzen und Weg planen
+function roombaPlan(R, goal, gx, gy, maxExp) {
+  const res = R.node >= 0 && goal >= 0 ? navPath(R.node, goal, maxExp) : null;
+  R.path = res ? res.path : null; R.pi = 0; R.goal = goal; R.gx = gx; R.gy = gy; R.replan = 0.6;
+  return res;
+}
+// Einen Teilschritt Richtung Ziel fahren: so weit voraus wie gerade befahrbar, sonst Knoten fuer Knoten am Gitter entlang
+function roombaDrive(R, st) {
+  const P = R.path;
+  if (!P) return false;
+  for (let j = Math.min(P.length - 1, R.pi + 12); j >= R.pi; j--) if (P[j] === R.node) { R.pi = j + 1; break; }
+  const zr = R.node >= 0 ? NAV.z[R.node] : R.z;
+  // 1) gerade Linie zum Endpunkt oder zum entferntesten sichtbaren Wegknoten
+  let tx = NaN, ty = NaN;
+  const last = P.length ? P[P.length - 1] : R.node;
+  if ((R.pi >= P.length || Math.abs(NAV.z[last] - zr) < STEP_UP * 3) && navLine(R.x, R.y, zr, R.gx, R.gy)) { tx = R.gx; ty = R.gy; }
+  else for (let j = Math.min(P.length - 1, R.pi + 8); j >= R.pi; j--) if (navLine(R.x, R.y, zr, NAV.x[P[j]], NAV.y[P[j]])) { tx = NAV.x[P[j]]; ty = NAV.y[P[j]]; break; }
+  if (tx === tx) {
+    const d = Math.hypot(tx - R.x, ty - R.y);
+    if (d < 0.5) return R.pi < P.length ? (R.pi++, true) : false;
+    if (roombaStep(R, tx, ty, Math.min(st, d), [0])) return true;
+  }
+  // 2) letzter Abschnitt (Schein liegt ausserhalb des Gitters, z.B. in einer Ecke): so nah wie moeglich ran
+  if (R.pi >= P.length) return roombaStep(R, R.gx, R.gy, st);
+  // 3) Knoten fuer Knoten: erst in die eigene Zellmitte, dann die Kante entlang zum naechsten Wegknoten
+  const nx = P[R.pi];
+  let adj = false;
+  if (R.node >= 0) for (let k = 0; k < 8; k++) if (NAV.nbr[R.node * 8 + k] === nx) { adj = true; break; }
+  if (!adj) { R.needPlan = true; return false; }
+  // naechster Punkt auf der Kante (eigene Zellmitte -> naechster Knoten); erst dorthin, dann an ihr entlang
+  const cx = NAV.x[R.node], cy = NAV.y[R.node], ex = NAV.x[nx], ey = NAV.y[nx];
+  const vx = ex - cx, vy = ey - cy, t = Math.max(0, Math.min(1, ((R.x - cx) * vx + (R.y - cy) * vy) / (vx * vx + vy * vy)));
+  const qx = cx + vx * t, qy = cy + vy * t, off = Math.hypot(qx - R.x, qy - R.y);
+  let gx = ex, gy = ey;
+  if (off > 0.75) { gx = qx; gy = qy; }
+  const e = Math.hypot(gx - R.x, gy - R.y), k = Math.min(1, st / Math.max(e, 1e-6));
+  const px = R.x + (gx - R.x) * k, py = R.y + (gy - R.y) * k;
+  const n = off <= 0.75 && k >= 1 ? nx : navNodeAt(px, py, zr, STEP_UP * 2);
+  if (n < 0) { R.needPlan = true; return false; }
+  R.x = px; R.y = py; R.node = n;
+  let dy = Math.atan2(ey - cy, ex - cx) - R.yaw; dy = ((dy + Math.PI * 3) % (Math.PI * 2)) - Math.PI; R.yaw += dy * 0.25;
+  return true;
+}
+function roombaWarp(R, n) {
+  if (n < 0) return;
+  fx.push({ type: 'flashfx', p: [R.x, R.y, R.z - 4], r: 34, soft: true, t: 0, life: .3 });
+  R.x = NAV.x[n]; R.y = NAV.y[n]; R.z = NAV.z[n];
+  fx.push({ type: 'flashfx', p: [R.x, R.y, R.z - 4], r: 34, soft: true, t: 0, life: .3 }); R.node = n; R.path = null; R.target = null;
+  R.chk = 0; R.cx = R.x; R.cy = R.y; R.slow = 0;
 }
 function updateRoombas(dt) {
   const w = game.weapons.find(x => x.id === 'roomba');
@@ -3072,49 +3185,91 @@ function updateRoombas(dt) {
   const S = w.st, want = Math.max(1, Math.round(S.count));
   while (roombas.length < want) {
     const n = game.playerNode;
-    roombas.push({ x: player.o[0], y: player.o[1], z: n >= 0 ? NAV.z[n] : player.o[2] - 36, yaw: player.yaw, node: n, target: null, seek: 0, stuck: 0, ban: new Map(), light: nodeLight(n), id: roombas.length });
+    roombas.push({ x: n >= 0 ? NAV.x[n] : player.o[0], y: n >= 0 ? NAV.y[n] : player.o[1], z: n >= 0 ? NAV.z[n] : player.o[2] - 36, yaw: player.yaw, node: n, target: null, seek: 0, ban: new Map(), light: nodeLight(n), id: roombas.length,
+      path: null, pi: 0, goal: -1, gx: 0, gy: 0, replan: 0, chk: 0, cx: 0, cy: 0, slow: 0, near: 0, needPlan: false, fpx: 0, fpy: 0 });
   }
   roombas.length = want;
   for (const R of roombas) {
-    R.seek -= dt;
-    if (R.target && (R.target.dead || R.target.fly)) R.target = null;
+    R.seek -= dt; R.replan -= dt;
+    if (R.node < 0 || R.node >= NAV.n) R.node = navNodeNear(R.x, R.y, R.z, 2);
+    if (R.target && (R.target.dead || R.target.fly)) { R.target = null; R.path = null; }
     if (R.seek <= 0) {
-      R.seek = 0.3;
-      // naechsten Geldschein mit freier Bahn suchen (nicht den, den schon ein anderer Roomba anfaehrt)
+      R.seek = R.target ? 1 : 0.3;
+      // naechsten erreichbaren Geldschein suchen (nicht den, den schon ein anderer Roomba anfaehrt)
       const cand = [];
       for (const d of drops) {
-        if (d.kind !== 'cash' || d.fly || d.dead || Math.abs(d.z - R.z) > 40) continue;
+        if (d.kind !== 'cash' || d.fly || d.dead || Math.abs(d.z - R.z) > 120) continue;
         if (roombas.some(o => o !== R && o.target === d)) continue;
-        if ((R.ban.get(d) || 0) > game.time) continue;
-        const dd = Math.hypot(d.x - R.x, d.y - R.y);
+        if (R.ban.has(d) && R.ban.get(d) > game.time) continue;
+        const dd = Math.hypot(d.x - R.x, d.y - R.y) + Math.abs(d.z - R.z);
         if (dd < 1100) cand.push([dd, d]);
       }
       cand.sort((a, b) => a[0] - b[0]);
-      let found = null;
-      for (let i = 0; i < Math.min(4, cand.length) && !found; i++) {
-        const d = cand[i][1];
-        if (trace([R.x, R.y, R.z + 10], [d.x, d.y, d.z + 6], 0).fraction > 0.99) found = d;
+      const cur = R.target ? Math.hypot(R.target.x - R.x, R.target.y - R.y) : Infinity;
+      for (let i = 0, tries = 0; i < cand.length && tries < 3; i++) {
+        const [dd, d] = cand[i];
+        if (d === R.target || dd > cur * 0.5) break; // nur wechseln, wenn deutlich naeher
+        tries++;
+        const goal = navNodeNear(d.x, d.y, d.z - 2, 2);
+        const res = goal >= 0 && roombaPlan(R, goal, d.x, d.y, 3000);
+        if (res && res.cost < dd * 2.2 + 160) { R.target = d; R.chk = 0; R.cx = R.x; R.cy = R.y; R.slow = 0; R.near = 0; break; }
+        R.ban.set(d, game.time + 5);
+        if (R.target) roombaPlan(R, R.goal, R.target.x, R.target.y, 3000);
+        else R.path = null;
       }
-      if (found !== R.target) { R.target = found; R.stuck = 0; }
+    }
+    // Ohne Geld: dem Spieler folgen
+    let idle = false;
+    if (!R.target) {
+      const dp = Math.hypot(player.o[0] - R.x, player.o[1] - R.y), pn = game.playerNode;
+      if (dp < 110 && pn >= 0 && Math.abs(NAV.z[pn] - R.z) < 40) { idle = true; R.path = null; }
+      else if (R.replan <= 0 || (pn >= 0 && Math.hypot(NAV.x[pn] - R.fpx, NAV.y[pn] - R.fpy) > 48 && R.replan < 0.45)) {
+        if (pn >= 0) {
+          roombaPlan(R, pn, NAV.x[pn], NAV.y[pn], 5000); R.fpx = NAV.x[pn]; R.fpy = NAV.y[pn];
+          // Spieler auf einer Insel (Kiste): Weg zum naechsten Punkt des Flow-Fields
+          if (!R.path && R.node >= 0) {
+            const fp = []; let n = R.node;
+            for (let s = 0; s < 400 && n >= 0; s++) {
+              let best = -1, bd = NAV.dist[n];
+              for (let k = 0; k < 8; k++) { const j = NAV.nbr[n * 8 + k]; if (j >= 0 && NAV.dist[j] < bd) { bd = NAV.dist[j]; best = j; } }
+              if (best < 0) break; fp.push(best); n = best;
+            }
+            if (fp.length) { R.path = fp; R.pi = 0; R.gx = NAV.x[n]; R.gy = NAV.y[n]; R.goal = n; }
+          }
+        }
+      }
     }
     // fahren (in kleinen Schritten)
-    let left = S.speed * dt;
-    while (left > 0) {
-      const st = Math.min(8, left); left -= st;
-      let ok;
-      if (R.target) ok = roombaStep(R, R.target.x, R.target.y, st);
-      else {
-        // kein Geld in Sicht: dem Spieler ueber das Flow-Field folgen
-        const dp = Math.hypot(player.o[0] - R.x, player.o[1] - R.y);
-        if (dp < 110) { R.yaw += dt * 0.8; break; }
-        let best = -1, bd = R.node >= 0 ? NAV.dist[R.node] : Infinity;
-        if (R.node >= 0) for (let k = 0; k < 8; k++) { const j = NAV.nbr[R.node * 8 + k]; if (j >= 0 && NAV.dist[j] < bd) { bd = NAV.dist[j]; best = j; } }
-        ok = best >= 0 ? roombaStep(R, NAV.x[best], NAV.y[best], st) : roombaStep(R, player.o[0], player.o[1], st);
+    if (idle) { R.yaw += dt * 0.8; R.chk = 0; R.cx = R.x; R.cy = R.y; R.slow = 0; }
+    else {
+      let left = S.speed * dt;
+      while (left > 0) {
+        const st = Math.min(8, left); left -= st;
+        if (!roombaDrive(R, st)) break;
       }
-      if (!ok) { R.stuck += st / S.speed; break; } else R.stuck = Math.max(0, R.stuck - dt);
+      if (R.needPlan) { R.needPlan = false; if (R.goal >= 0) roombaPlan(R, R.goal, R.gx, R.gy, 4000); }
+      // Fortschritt pruefen: wer in 1 s kaum vorankommt, haengt fest
+      R.chk += dt;
+      if (R.chk >= 1) {
+        const moved = Math.hypot(R.x - R.cx, R.y - R.cy);
+        R.slow = moved < Math.max(14, S.speed * 0.15) ? R.slow + 1 : 0;
+        R.chk = 0; R.cx = R.x; R.cy = R.y;
+        if (R.slow >= 2) {
+          if (R.target) { R.ban.set(R.target, game.time + 6); R.target = null; R.path = null; R.seek = 0; R.slow = 0; }
+          else if (R.slow >= 3) roombaWarp(R, game.playerNode);
+          else R.path = null;
+        }
+      }
+      // am Ziel angekommen, aber Schein nicht erreichbar (z.B. tief in der Ecke)
+      if (R.target && R.path && R.pi >= R.path.length) {
+        R.near += dt;
+        if (R.near > 1.5) { R.ban.set(R.target, game.time + 8); R.target = null; R.path = null; R.seek = 0; }
+      }
     }
-    if (R.stuck > 1 && R.target) { R.ban.set(R.target, game.time + 4); R.target = null; R.stuck = 0; }
-    if (R.node >= 0) { const L = nodeLight(R.node); for (let c = 0; c < 3; c++) R.light[c] += (L[c] - R.light[c]) * Math.min(1, dt * 4); }
+    if (R.node >= 0) {
+      R.z += (NAV.z[R.node] - R.z) * Math.min(1, dt * 12);
+      const L = nodeLight(R.node); for (let c = 0; c < 3; c++) R.light[c] += (L[c] - R.light[c]) * Math.min(1, dt * 4);
+    }
     // Kampf-Roomba: Geld in der Naehe heranziehen, Gegner beim Ueberfahren verletzen
     if (S.magnet) for (const d of drops) {
       if (d.kind !== 'cash' || d.dead || d.fly || Math.abs(d.z - R.z) > 48) continue;
@@ -3820,6 +3975,7 @@ const NET = { role: null, peer: null, code: '', name: '', idx: 0, nextIdx: 1, pl
   mirrors: new Map(), pend: new Map(), dmgQ: new Map(), stunQ: [], tick: 0, snapT: 0, stateT: 0, names: {}, bossInfo: null,
   avatars: new Map(), avatarList: [], rTurrets: [], rRoombas: [], tags: new Map(), lightCache: new Map() };
 const NET_PREFIX = 'cssurv-';
+const NET_MAX = 8; // Spieler pro Raum inkl. Host (Bandbreite des Host-Handys)
 const QS = new URLSearchParams(location.search);
 
 function loadPeerLib() {
@@ -3862,8 +4018,8 @@ function netLobby() {
   const names = NET.role === 'host'
     ? [NET.name + ' (Host)', ...[...NET.players.values()].map(P => P.name)]
     : Object.values(NET.names);
-  if (NET.role === 'host') netStatus(`Raum <b style="font-size:20px;letter-spacing:.1em">${NET.code}</b> · Code an die Mitspieler geben<br>Im Raum: ${names.join(', ')}`);
-  else if (NET.role === 'guest') netStatus(`Verbunden mit Raum <b>${NET.code}</b> · Im Raum: ${names.join(', ') || '…'}<br>Der Host startet die Runde.`);
+  if (NET.role === 'host') netStatus(`Raum <b style="font-size:20px;letter-spacing:.1em">${NET.code}</b> · Code an die Mitspieler geben<br>Im Raum (${names.length}/${NET_MAX}): ${names.join(', ')}`);
+  else if (NET.role === 'guest') netStatus(`Verbunden mit Raum <b>${NET.code}</b> · Im Raum (${names.length}/${NET_MAX}): ${names.join(', ') || '…'}<br>Der Host startet die Runde.`);
   const sb = $('#startBtn');
   if (NET.role === 'guest') { sb.disabled = true; sb.textContent = 'WARTE AUF HOST'; }
   else { sb.disabled = !NET.ready; sb.textContent = NET.role === 'host' ? 'SPIELEN (alle)' : 'SPIELEN'; }
@@ -3895,6 +4051,11 @@ async function netHost() {
 }
 function netHostConn(c) {
   let P = NET.players.get(c.peer);
+  if (!P && NET.players.size >= NET_MAX - 1) { // Raum voll: freundlich abweisen
+    if (c.label === 'ev') c.on('open', () => { netSend(c, { t: 'full', max: NET_MAX }); setTimeout(() => c.close(), 500); });
+    else setTimeout(() => c.close(), 500);
+    return;
+  }
   if (!P) {
     P = { id: c.peer, idx: NET.nextIdx++, name: 'Spieler', o: [0, 0, 0], yaw: 0, pitch: 0, ducked: false, alive: false, inRound: false,
       moving: false, node: -1, turrets: [], roombas: [], ev: null, st: null };
@@ -4084,6 +4245,9 @@ function netGuestMsg(m) {
     netStatus('Der Host spielt ' + m.map + ' – lade Map …');
     settings.map = m.map; saveSettings();
     location.href = `?map=${encodeURIComponent(m.map)}&join=${NET.code}&name=${encodeURIComponent(NET.name)}${QS.get('peer') ? '&peer=' + QS.get('peer') : ''}`;
+  } else if (m.t === 'full') {
+    const code = NET.code; NET.role = null; netReset(); netLobby();
+    netStatus(`Raum <b>${code}</b> ist voll (max. ${m.max} Spieler).`);
   } else if (m.t === 'welcome') { NET.idx = m.idx; netLobby(); }
   else if (m.t === 'players') { NET.names = m.list; netLobby(); }
   else if (m.t === 'start') netGuestStart(m);
@@ -4425,7 +4589,7 @@ $('#mpLeave').addEventListener('click', () => { if (NET.role === 'guest') netSen
   requestAnimationFrame(t => { last = t; frame(t); });
   // Test-Schnittstelle (fuer automatische Tests)
   window.__cs = { player, input, teleport, trace, SPOTS, WORLD, BSP, NAV, game, get enemies() { return enemies; }, settings,
-    get drops() { return drops; }, addXp, addWeapon, refreshStats, openChest, get zones() { return zones; }, dbg: () => JSON.stringify({nades: nades.length, c4: c4s.length, shots: eShots.length, fx: fx.length}), start: () => sb.click(), get PROPS() { return PROPS; }, RADAR, drawRadar, SND, sfx, get turrets() { return turrets; }, placeTurret, flowFrom, get roombas() { return roombas; }, get LADDERS() { return LADDERS; }, get BREAKABLES() { return BREAKABLES; }, META, toMainMenu, waterLevel, NET, netHost, netJoin, get drops() { return drops; },  setLight: v => LIGHT.splice(0, 3, ...v) };
+    get drops() { return drops; }, addXp, addWeapon, refreshStats, openChest, get zones() { return zones; }, dbg: () => JSON.stringify({nades: nades.length, c4: c4s.length, shots: eShots.length, fx: fx.length}), start: () => sb.click(), get PROPS() { return PROPS; }, RADAR, drawRadar, SND, sfx, get turrets() { return turrets; }, placeTurret, flowFrom, get roombas() { return roombas; }, updateRoombas, navPath, navLine, RP, get LADDERS() { return LADDERS; }, get BREAKABLES() { return BREAKABLES; }, META, toMainMenu, waterLevel, NET, netHost, netJoin, get drops() { return drops; },  setLight: v => LIGHT.splice(0, 3, ...v) };
 })();
 </script>
 </body>

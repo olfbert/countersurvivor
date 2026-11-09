@@ -11,6 +11,7 @@ Ego-Shooter im Stil von Counter-Strike 1.6, der sich wie Vampire Survivors spiel
 
 | Version | Phase | Inhalt |
 | --- | --- | --- |
+| v0.11.2 | Roomba-Wegfindung | Roomba plant seinen Weg über das Laufgitter (A*) statt geradeaus zu fahren: kommt um Ecken, Kisten und Treppen, merkt sich unerreichbares Geld und lässt es liegen, springt zum Spieler zurück, wenn er abgehängt ist (z. B. nach einer Leiter); Mehrspieler-Räume auf 8 Spieler begrenzt (»Raum voll«), Lobby zeigt die Belegung |
 | v0.11 | Mehrspieler | Optionaler Koop im selben WLAN: Raum erstellen → 4-stelliger Code → Mitspieler treten bei (Vermittlung über PeerJS, danach direkt per WebRTC). Host rechnet die Gegner, jeder hat eigenes Geld, Level, Waffen und Beute; Gegner jagen den nächsten Spieler, mehr Spieler = mehr Gegner; Mitspieler als GIGN mit Namen, im Radar hellblau, ihre Türme/Roombas sichtbar; Explosionen der anderen sichtbar; Gefallene schauen zu bis Rundenende; Gast mit anderer Map lädt automatisch die Map des Hosts |
 | v0.10.2 | Fix | Killfeed blieb in der zweiten Runde leer (Drossel-Zeit wurde beim Neustart nicht zurückgesetzt) |
 | v0.10.1 | Ducken | Ducken wie in CS (halb so hoch, ein Drittel Tempo, Aufstehen nur mit Platz über dem Kopf): Touch-Knopf DUCKEN (an/aus) über SPRUNG, PC Strg oder C; Turm-Knopf rückt nach oben |
@@ -40,6 +41,7 @@ Hauptmenü → **MEHRSPIELER** → Name eingeben → **RAUM ERSTELLEN**. Der Hos
 
 - Verbindungsaufbau über den kostenlosen PeerJS-Vermittlungsdienst, danach laufen die Daten direkt zwischen den Geräten (WebRTC).
 - Der Host berechnet Gegner, Wellen und Bosse; jeder Spieler berechnet seine Waffen, sein Geld, Level und seine Beute selbst.
+- Bis zu 8 Spieler pro Raum (Host mitgezählt); angenehm sind 2–4, denn das Host-Gerät schickt allen 15-mal pro Sekunde die Gegnerdaten.
 - Dateien: `peerjs.min.js` (PeerJS 1.5.5, MIT-Lizenz, siehe `peerjs.LICENSE`) und `models_ct.bin` (GIGN-Modell für Mitspieler) werden nur im Mehrspieler nachgeladen.
 - Zum Testen ohne Internet: eigener PeerJS-Server und `?peer=host:port` an die Adresse hängen.
 

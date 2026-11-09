@@ -7,6 +7,7 @@ const NET = { role: null, peer: null, code: '', name: '', idx: 0, nextIdx: 1, pl
   mirrors: new Map(), pend: new Map(), dmgQ: new Map(), stunQ: [], tick: 0, snapT: 0, stateT: 0, names: {}, bossInfo: null,
   avatars: new Map(), avatarList: [], rTurrets: [], rRoombas: [], tags: new Map(), lightCache: new Map() };
 const NET_PREFIX = 'cssurv-';
+const NET_MAX = 8; // Spieler pro Raum inkl. Host (Bandbreite des Host-Handys)
 const QS = new URLSearchParams(location.search);
 
 function loadPeerLib() {
@@ -49,8 +50,8 @@ function netLobby() {
   const names = NET.role === 'host'
     ? [NET.name + ' (Host)', ...[...NET.players.values()].map(P => P.name)]
     : Object.values(NET.names);
-  if (NET.role === 'host') netStatus(`Raum <b style="font-size:20px;letter-spacing:.1em">${NET.code}</b> · Code an die Mitspieler geben<br>Im Raum: ${names.join(', ')}`);
-  else if (NET.role === 'guest') netStatus(`Verbunden mit Raum <b>${NET.code}</b> · Im Raum: ${names.join(', ') || '…'}<br>Der Host startet die Runde.`);
+  if (NET.role === 'host') netStatus(`Raum <b style="font-size:20px;letter-spacing:.1em">${NET.code}</b> · Code an die Mitspieler geben<br>Im Raum (${names.length}/${NET_MAX}): ${names.join(', ')}`);
+  else if (NET.role === 'guest') netStatus(`Verbunden mit Raum <b>${NET.code}</b> · Im Raum (${names.length}/${NET_MAX}): ${names.join(', ') || '…'}<br>Der Host startet die Runde.`);
   const sb = $('#startBtn');
   if (NET.role === 'guest') { sb.disabled = true; sb.textContent = 'WARTE AUF HOST'; }
   else { sb.disabled = !NET.ready; sb.textContent = NET.role === 'host' ? 'SPIELEN (alle)' : 'SPIELEN'; }
@@ -82,6 +83,11 @@ async function netHost() {
 }
 function netHostConn(c) {
   let P = NET.players.get(c.peer);
+  if (!P && NET.players.size >= NET_MAX - 1) { // Raum voll: freundlich abweisen
+    if (c.label === 'ev') c.on('open', () => { netSend(c, { t: 'full', max: NET_MAX }); setTimeout(() => c.close(), 500); });
+    else setTimeout(() => c.close(), 500);
+    return;
+  }
   if (!P) {
     P = { id: c.peer, idx: NET.nextIdx++, name: 'Spieler', o: [0, 0, 0], yaw: 0, pitch: 0, ducked: false, alive: false, inRound: false,
       moving: false, node: -1, turrets: [], roombas: [], ev: null, st: null };
@@ -271,6 +277,9 @@ function netGuestMsg(m) {
     netStatus('Der Host spielt ' + m.map + ' – lade Map …');
     settings.map = m.map; saveSettings();
     location.href = `?map=${encodeURIComponent(m.map)}&join=${NET.code}&name=${encodeURIComponent(NET.name)}${QS.get('peer') ? '&peer=' + QS.get('peer') : ''}`;
+  } else if (m.t === 'full') {
+    const code = NET.code; NET.role = null; netReset(); netLobby();
+    netStatus(`Raum <b>${code}</b> ist voll (max. ${m.max} Spieler).`);
   } else if (m.t === 'welcome') { NET.idx = m.idx; netLobby(); }
   else if (m.t === 'players') { NET.names = m.list; netLobby(); }
   else if (m.t === 'start') netGuestStart(m);
