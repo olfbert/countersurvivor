@@ -87,8 +87,8 @@ def main():
     src, out = sys.argv[1:3]
     nodes, frames, tris = parse_smd(os.path.join(src, "turret_01_reference.smd"))
     bind = frames[0]
-    # Wurzel: -90 Grad um Z, damit "vorne" (+Y im Modell, Seite mit der Linse) zu +X wird
-    root = [[0, 1, 0, 0], [-1, 0, 0, 0], [0, 0, 1, 0]]
+    # Wurzel: +90 Grad um Z, damit "vorne" (-Y im Modell, Seite mit den Rohren) zu +X wird
+    root = [[0, -1, 0, 0], [1, 0, 0, 0], [0, 0, 1, 0]]
     world = []
     for b, (name, parent) in enumerate(nodes):
         local = mat(bind[b][:3], bind[b][3:])
