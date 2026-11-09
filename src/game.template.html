@@ -29,6 +29,15 @@
   #radar { position: absolute; inset: auto; top: max(8px, env(safe-area-inset-top)); right: max(10px, env(safe-area-inset-right)); width: 128px; height: 128px;
     border-radius: 50%; pointer-events: none; box-shadow: 0 0 0 1px rgba(255, 180, 60, .35), 0 2px 8px rgba(0, 0, 0, .5); }
   #radar.off { display: none; }
+  #killfeed { position: absolute; top: max(10px, env(safe-area-inset-top)); right: max(150px, calc(env(safe-area-inset-right) + 142px)); display: flex; flex-direction: column; align-items: flex-end; gap: 3px; pointer-events: none; }
+  #hud:not(.radar) #killfeed { right: max(12px, env(safe-area-inset-right)); top: max(56px, calc(env(safe-area-inset-top) + 48px)); }
+  .kf { display: flex; align-items: center; gap: 5px; padding: 2px 7px; background: rgba(10, 12, 8, .55); border-radius: 3px; font-size: 11.5px; white-space: nowrap; transition: opacity .4s; }
+  .kf.old { opacity: 0; }
+  .kf .me { color: #9fd0ff; }
+  .kf .vic { color: #ff9d7a; }
+  .kf.boss .vic { color: #ffd34a; font-weight: 700; }
+  .kf img { height: 15px; width: auto; filter: drop-shadow(0 0 1px #000); }
+  .kf img.hs { height: 13px; }
   #hud.radar #stats { top: max(144px, calc(env(safe-area-inset-top) + 136px)); }
   #stats { position: absolute; top: max(10px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); text-align: right;
     font: 12px/1.35 ui-monospace, Menlo, Consolas, monospace; color: var(--hud); text-shadow: 0 1px 2px #000; pointer-events: none; }
@@ -158,6 +167,7 @@
   <div id="cross"><i></i><i></i><i></i><i></i></div>
   <button id="menuBtn" aria-label="Menü">☰</button>
   <canvas id="radar"></canvas>
+  <div id="killfeed"></div>
   <div id="stats"></div>
   <div id="hurt"></div>
   <div id="muzzle"></div>
@@ -179,7 +189,7 @@
 <div class="overlay show" id="start">
   <div class="box">
     <h1>COUNTER-SURVIVORS</h1>
-    <p class="muted">Geschützturm · v__VERSION__</p>
+    <p class="muted">Roomba &amp; neue Maps · v__VERSION__</p>
     <div class="maps" id="mapPick"></div>
     <div class="barwrap"><div class="barfill" id="loadbar"></div></div>
     <p class="muted" id="loadtxt">Lade Map …</p>
@@ -227,7 +237,7 @@
     <h2>Test</h2>
     <div class="grid">
       <button id="skipBtn">Zeit +1 Min</button><button id="lvlBtn">Level-Up</button>
-      <button id="godBtn"></button><button id="restartBtn">Runde neu</button><button id="turretGive">Geschützturm geben</button>
+      <button id="godBtn"></button><button id="restartBtn">Runde neu</button><button id="turretGive">Geschützturm geben</button><button id="roombaGive">Roomba geben</button>
     </div>
     <h2>Steuerung</h2>
     <p class="muted" id="ctrlHint2"></p>
@@ -241,6 +251,7 @@
 <script id="icons" type="application/json">__ICONS__</script>
 <script id="sounds" type="application/octet-stream">__SOUNDS__</script>
 <script id="turret" type="application/octet-stream">__TURRET__</script>
+<script id="roomba" type="application/octet-stream">__ROOMBA__</script>
 <script>
 'use strict';
 // =====================================================================
@@ -353,7 +364,9 @@ void main() { o = vec4(texture(uTex, vUV).rgb, 1.0); }`);
 // ---------------------------------------------------------------- Paket laden
 const MAPS = [
   { id: 'de_dust_cz', title: 'de_dust', sub: 'Condition Zero · Bombenentschärfung', file: null },
-  { id: 'cs_747', title: 'cs_747', sub: 'Flugzeug · Geiselrettung', file: 'maps/cs_747.bin' },
+  { id: 'cs_assault', title: 'cs_assault', sub: 'Lagerhalle · Geiselrettung', file: 'maps/cs_assault.bin' },
+  { id: 'cs_italy', title: 'cs_italy', sub: 'Italien · Geiselrettung', file: 'maps/cs_italy.bin', note: 'Texturen unvollständig' },
+  { id: 'de_rats_2001', title: 'de_rats', sub: 'Riesenküche · Bombenentschärfung', file: 'maps/de_rats_2001.bin', note: 'Texturen unvollständig' },
 ];
 const MAP = (() => {
   let id = null;
@@ -1192,8 +1205,13 @@ function buildNav() {
           if (c > 0.01) pos++; else if (c < -0.01) neg++;
         }
         if (pos && neg) continue;
-        const z = (d - nx * cx - ny * cy) / nz;
-        if (!standable(cx, cy, z)) continue;
+        let z = (d - nx * cx - ny * cy) / nz;
+        if (!standable(cx, cy, z)) {
+          // Treppen unter unsichtbaren Clip-Rampen: Spieler-Huelle von oben absenken und auf der Rampe aufsetzen
+          const tr = trace([cx, cy, z + 36.5 + 44], [cx, cy, z + 35.5], 1);
+          if (tr.startsolid || tr.allsolid || tr.fraction >= 1) continue;
+          z = tr.endpos[2] - 36;
+        }
         // Helligkeit aus der Lightmap der Bodenflaeche
         let lr = 200, lg = 200, lb = 200;
         if (f.lightofs >= 0 && f.style0 !== 255) {
@@ -1561,6 +1579,7 @@ function damageEnemy(e, dmg, head, w, quiet) {
   e.seq = e.m.seq[head ? 'head' : DEATHS[(Math.random() * DEATHS.length) | 0]];
   game.kills++;
   if (w) w.kills++;
+  killfeed(e, w, head);
   dropLoot(e);
   if (e === game.boss) { game.boss = null; toast(e.boss.name + ' besiegt!'); sfx('enemydown', { vol: 0.8, delay: 0.5, important: true }); }
   return true;
@@ -1673,6 +1692,8 @@ const WDEF = {
     ups: [['radius', 40, 'größerer Radius'], ['stun', 0.8, 'blendet 0,8 s länger'], ['int', 0.85, 'wirft 15 % öfter'], ['dmg', 25, '+25 Schaden'], ['radius', 50, 'größerer Radius'], ['stun', 1, 'blendet 1 s länger'], ['int', 0.8, 'wirft 20 % öfter']] },
   smoke: { name: 'Rauchgranate', icon: 'smoke', kind: 'smoke', base: { dmg: 22, int: 8, radius: 170, dur: 6, slow: 0.5, count: 1, range: 900 },
     ups: [['radius', 30, 'größere Wolke'], ['dmg', 12, '+12 Schaden pro Sekunde'], ['dur', 2, 'hält 2 s länger'], ['int', 0.85, 'wirft 15 % öfter'], ['dmg', 18, '+18 Schaden pro Sekunde'], ['radius', 40, 'größere Wolke'], ['slow', 0.15, 'bremst stärker']] },
+  roomba: { name: 'Roomba', icon: 'roomba', kind: 'roomba', base: { count: 1, speed: 190, pick: 34 },
+    ups: [['speed', 40, 'fährt schneller'], ['pick', 14, 'saugt breiter'], ['count', 1, '+1 Roomba'], ['speed', 40, 'fährt schneller'], ['pick', 14, 'saugt breiter'], ['count', 1, '+1 Roomba'], ['speed', 50, 'fährt noch schneller']] },
   turret: { name: 'Geschützturm', icon: 'turret', kind: 'turret', base: { dmg: 16, int: 0.1, range: 1100, count: 1 },
     ups: [['dmg', 6, '+6 Schaden'], ['count', 1, '+1 Turm gleichzeitig'], ['int', 0.85, 'feuert 15 % schneller'], ['range', 300, 'größere Reichweite'], ['dmg', 8, '+8 Schaden'], ['count', 1, '+1 Turm gleichzeitig'], ['int', 0.8, 'feuert 20 % schneller']] },
   c4: { name: 'C4', icon: 'c4', kind: 'c4', base: { dmg: 240, int: 5, radius: 200, fuse: 2.5, count: 1 },
@@ -1684,7 +1705,8 @@ const WDESC = { usp: 'Einzelschüsse aufs fadenkreuznächste Ziel', knife: 'Schn
   awp: 'Langsam, riesiger Schaden, durchschlägt alle Gegner in der Linie', m249: 'Gurtfeuer, verteilt Kugeln auf viele Ziele',
   elites: 'Feuert gleichzeitig nach links und rechts', he: 'Fliegt in die dichteste Gruppe in Sicht',
   flash: 'Gegner im Umkreis erstarren', smoke: 'Wolke bremst Gegner und verletzt sie', c4: 'Legt Bomben an deinen Füßen',
-  turret: 'Zum Hinstellen (Knopf TURM): zielt per Laser, schießt im 60°-Fächer' };
+  turret: 'Zum Hinstellen (Knopf TURM): zielt per Laser, schießt im 60°-Fächer',
+  roomba: 'Fährt herum und saugt das Geld für dich ein' };
 const PDEF = {
   kevlar: { name: 'Kevlar', icon: 'kevlar', desc: '8 % weniger Schaden' },
   helm: { name: 'Helm', icon: 'helm', desc: '+20 max. HP (heilt 20)' },
@@ -2154,6 +2176,7 @@ document.addEventListener('gesturestart', e => e.preventDefault());
 const jumpBtn = $('#jumpBtn');
 $('#turretBtn').addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); placeTurret(); });
 $('#turretGive').addEventListener('click', () => { if (!game.weapons.some(w => w.id === 'turret')) { addWeapon('turret'); refreshStats(); } togglePause(false); toast('Geschützturm: Knopf TURM oder Taste T'); });
+$('#roombaGive').addEventListener('click', () => { if (!game.weapons.some(w => w.id === 'roomba')) { addWeapon('roomba'); refreshStats(); } togglePause(false); });
 jumpBtn.addEventListener('pointerdown', e => { e.preventDefault(); player.jumpQueued = true; player.jumpHeld = true; });
 const jumpUp = () => { player.jumpHeld = false; };
 jumpBtn.addEventListener('pointerup', jumpUp); jumpBtn.addEventListener('pointercancel', jumpUp); jumpBtn.addEventListener('pointerleave', jumpUp);
@@ -2282,6 +2305,7 @@ function render() {
   drawWorld(VP, false);
   drawProps(VP);
   drawTurrets(VP);
+  drawRoombas(VP);
   drawShadows(VP);
   drawEnemies(VP);
   drawSprites(VP, yaw);
@@ -2500,6 +2524,10 @@ function drawRadar() {
   for (const T of turrets) {
     const [u, v] = toR(T.x, T.y); if ((u - R) ** 2 + (v - R) ** 2 > R * R) continue;
     x.fillStyle = '#5fd7ff'; x.beginPath(); x.arc(u, v, ds * 1.6, 0, Math.PI * 2); x.fill();
+  }
+  for (const Rb of roombas) {
+    const [u, v] = toR(Rb.x, Rb.y); if ((u - R) ** 2 + (v - R) ** 2 > R * R) continue;
+    x.fillStyle = '#7dff8a'; x.beginPath(); x.arc(u, v, ds * 1.3, 0, Math.PI * 2); x.fill();
   }
   // Gegner (heller = auf deiner Hoehe, dunkler = darueber/darunter)
   const pz = p[2] - 36;
@@ -2797,6 +2825,174 @@ function updateTurretBtn() {
   if (!show) return;
   const txt = w.cd > 0 ? Math.ceil(w.cd) + ' s' : turrets.length + '/' + Math.max(1, Math.round(w.st.count));
   if (b.dataset.t !== txt) { b.dataset.t = txt; $('#turretInfo').textContent = txt; b.classList.toggle('cool', w.cd > 0); }
+}
+
+// ---------------------------------------------------------------- Roomba: faehrt ueber das Wegnetz und saugt Geld ein
+let ROOMBA = null, roombas = [];
+const progRoomba = program(`#version 300 es
+precision highp float;
+layout(location=0) in vec3 aPos;
+uniform mat4 uVP; uniform vec4 uPY; uniform float uScale;
+out vec3 vW; out vec3 vL;
+void main() {
+  vec3 m = aPos * uScale; float c = cos(uPY.w), s = sin(uPY.w);
+  vL = m;
+  vW = vec3(c * m.x - s * m.y + uPY.x, s * m.x + c * m.y + uPY.y, m.z + uPY.z);
+  gl_Position = uVP * vec4(vW, 1.0);
+}`, `#version 300 es
+precision highp float;
+in vec3 vW; in vec3 vL; uniform vec3 uSun; uniform vec3 uLight; uniform vec2 uRH; out vec4 o;
+void main() {
+  vec3 n = normalize(cross(dFdx(vW), dFdy(vW)));
+  float r = length(vL.xy) / uRH.x, top = vL.z / uRH.y;
+  vec3 col = vec3(0.56, 0.57, 0.6);                                   // Seiten: Silber
+  if (n.z > 0.75 && top > 0.75) col = r < 0.3 ? vec3(0.32, 0.33, 0.35) : (r < 0.36 ? vec3(0.75) : (r < 0.88 ? vec3(0.08, 0.085, 0.095) : vec3(0.62, 0.63, 0.66)));
+  else if (top < 0.25) col = vec3(0.12, 0.12, 0.13);                  // Unterseite / Raeder
+  float d = max(dot(n, uSun), 0.0);
+  o = vec4(col * uLight * (0.6 + 0.6 * d) + pow(max(n.z, 0.0), 24.0) * 0.08, 1.0);
+}`);
+function buildRoomba({ man, part }) {
+  const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+  const vb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vb); gl.bufferData(gl.ARRAY_BUFFER, new Int16Array(part(man.verts)), gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.SHORT, false, 6, 0);
+  const ib = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(part(man.idx)), gl.STATIC_DRAW);
+  gl.bindVertexArray(null);
+  return { vao, count: man.numIdx, scale: man.scale, r: man.radius, h: man.height };
+}
+function drawRoombaOne(R, VP, sun) {
+  gl.uniform4f(progRoomba.u.uPY, R.x, R.y, R.z, R.yaw);
+  gl.uniform3fv(progRoomba.u.uLight, R.light);
+  gl.drawElements(gl.TRIANGLES, ROOMBA.count, gl.UNSIGNED_SHORT, 0);
+}
+function drawRoombas(VP) {
+  if (!ROOMBA || !roombas.length) return;
+  gl.useProgram(progRoomba.p);
+  gl.uniformMatrix4fv(progRoomba.u.uVP, false, VP);
+  gl.uniform3fv(progRoomba.u.uSun, SUN); gl.uniform1f(progRoomba.u.uScale, ROOMBA.scale); gl.uniform2f(progRoomba.u.uRH, ROOMBA.r, ROOMBA.h);
+  gl.bindVertexArray(ROOMBA.vao);
+  for (const R of roombas) drawRoombaOne(R);
+  gl.bindVertexArray(null);
+}
+function nodeLight(i) { return i >= 0 ? [NAV.light[i * 3], NAV.light[i * 3 + 1], NAV.light[i * 3 + 2]] : [1, 1, 1]; }
+// Einen Schritt Richtung (tx, ty); weicht Waenden aus, bleibt auf begehbarem Boden gleicher Hoehe
+function roombaStep(R, tx, ty, step) {
+  const want = Math.atan2(ty - R.y, tx - R.x);
+  for (const off of [0, 0.45, -0.45, 0.9, -0.9, 1.45, -1.45, 2.1, -2.1]) {
+    const a = want + off, nx = R.x + Math.cos(a) * step, ny = R.y + Math.sin(a) * step;
+    const n = navNodeAt(nx, ny, R.z, 20);
+    if (n < 0 || Math.abs(NAV.z[n] - R.z) > 18) continue;
+    R.x = nx; R.y = ny; R.z += (NAV.z[n] - R.z) * 0.5; R.node = n;
+    let dy = a - R.yaw; dy = ((dy + Math.PI * 3) % (Math.PI * 2)) - Math.PI; R.yaw += dy * 0.25;
+    return true;
+  }
+  return false;
+}
+function updateRoombas(dt) {
+  const w = game.weapons.find(x => x.id === 'roomba');
+  if (!w || !ROOMBA) { roombas = []; return; }
+  const S = w.st, want = Math.max(1, Math.round(S.count));
+  while (roombas.length < want) {
+    const n = game.playerNode;
+    roombas.push({ x: player.o[0], y: player.o[1], z: n >= 0 ? NAV.z[n] : player.o[2] - 36, yaw: player.yaw, node: n, target: null, seek: 0, stuck: 0, ban: new Map(), light: nodeLight(n), id: roombas.length });
+  }
+  roombas.length = want;
+  for (const R of roombas) {
+    R.seek -= dt;
+    if (R.target && (R.target.dead || R.target.fly)) R.target = null;
+    if (R.seek <= 0) {
+      R.seek = 0.3;
+      // naechsten Geldschein mit freier Bahn suchen (nicht den, den schon ein anderer Roomba anfaehrt)
+      const cand = [];
+      for (const d of drops) {
+        if (d.kind !== 'cash' || d.fly || d.dead || Math.abs(d.z - R.z) > 40) continue;
+        if (roombas.some(o => o !== R && o.target === d)) continue;
+        if ((R.ban.get(d) || 0) > game.time) continue;
+        const dd = Math.hypot(d.x - R.x, d.y - R.y);
+        if (dd < 1100) cand.push([dd, d]);
+      }
+      cand.sort((a, b) => a[0] - b[0]);
+      let found = null;
+      for (let i = 0; i < Math.min(4, cand.length) && !found; i++) {
+        const d = cand[i][1];
+        if (trace([R.x, R.y, R.z + 10], [d.x, d.y, d.z + 6], 0).fraction > 0.99) found = d;
+      }
+      if (found !== R.target) { R.target = found; R.stuck = 0; }
+    }
+    // fahren (in kleinen Schritten)
+    let left = S.speed * dt;
+    while (left > 0) {
+      const st = Math.min(8, left); left -= st;
+      let ok;
+      if (R.target) ok = roombaStep(R, R.target.x, R.target.y, st);
+      else {
+        // kein Geld in Sicht: dem Spieler ueber das Flow-Field folgen
+        const dp = Math.hypot(player.o[0] - R.x, player.o[1] - R.y);
+        if (dp < 110) { R.yaw += dt * 0.8; break; }
+        let best = -1, bd = R.node >= 0 ? NAV.dist[R.node] : Infinity;
+        if (R.node >= 0) for (let k = 0; k < 8; k++) { const j = NAV.nbr[R.node * 8 + k]; if (j >= 0 && NAV.dist[j] < bd) { bd = NAV.dist[j]; best = j; } }
+        ok = best >= 0 ? roombaStep(R, NAV.x[best], NAV.y[best], st) : roombaStep(R, player.o[0], player.o[1], st);
+      }
+      if (!ok) { R.stuck += st / S.speed; break; } else R.stuck = Math.max(0, R.stuck - dt);
+    }
+    if (R.stuck > 1 && R.target) { R.ban.set(R.target, game.time + 4); R.target = null; R.stuck = 0; }
+    if (R.node >= 0) { const L = nodeLight(R.node); for (let c = 0; c < 3; c++) R.light[c] += (L[c] - R.light[c]) * Math.min(1, dt * 4); }
+    // einsaugen
+    const pr = S.pick;
+    for (const d of drops) {
+      if (d.kind !== 'cash' || d.dead || d.fly) continue;
+      if (Math.abs(d.x - R.x) < pr && Math.abs(d.y - R.y) < pr && Math.abs(d.z - R.z) < 40 && Math.hypot(d.x - R.x, d.y - R.y) < pr) {
+        d.dead = true; collect(d);
+      }
+    }
+  }
+}
+function renderModelIcon(drawFn, key) {
+  const w = 192, h = 160;
+  const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  const rb = gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER, rb); gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, w, h);
+  const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, rb);
+  gl.viewport(0, 0, w, h); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST); gl.enable(gl.CULL_FACE);
+  drawFn(w, h);
+  const px = new Uint8Array(w * h * 4); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.deleteFramebuffer(fb); gl.deleteRenderbuffer(rb); gl.deleteTexture(tex);
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const cx = cv.getContext('2d'), id = cx.createImageData(w, h);
+  for (let y = 0; y < h; y++) id.data.set(px.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);
+  cx.putImageData(id, 0, 0);
+  ICONS[key] = cv.toDataURL('image/png');
+}
+function renderRoombaIcon() {
+  renderModelIcon((w, h) => {
+    const sx = 17, sy = sx * h / w;
+    const P = new Float32Array([1 / sx, 0, 0, 0, 0, 1 / sy, 0, 0, 0, 0, -2 / 600, 0, 0, 0, -1, 1]);
+    const VP = M4.mul(P, M4.view([-200, 0, 4 + 200 * Math.tan(0.55)], 0, -0.55));
+    gl.useProgram(progRoomba.p);
+    gl.uniformMatrix4fv(progRoomba.u.uVP, false, VP);
+    gl.uniform3fv(progRoomba.u.uSun, [-0.4, 0.5, 0.75]); gl.uniform1f(progRoomba.u.uScale, ROOMBA.scale); gl.uniform2f(progRoomba.u.uRH, ROOMBA.r, ROOMBA.h);
+    gl.bindVertexArray(ROOMBA.vao); drawRoombaOne({ x: 0, y: 0, z: 0, yaw: 0.6, light: [1.3, 1.3, 1.3] }); gl.bindVertexArray(null);
+  }, 'roomba');
+}
+
+// ---------------------------------------------------------------- Killfeed: hoechstens 5 Zeilen, normale Kills gedrosselt
+const KF_NAMES = { terror: 'Phoenix', leet: 'Leet Krew', arctic: 'Arctic Avenger', guerilla: 'Guerilla', militia: 'Midwest Militia' };
+let kfLast = -9;
+function killfeed(e, w, head) {
+  const big = !!e.boss || e.elite;
+  if (!big && game.time - kfLast < 0.3) return;
+  kfLast = game.time;
+  const box = $('#killfeed');
+  const row = document.createElement('div');
+  row.className = 'kf' + (e.boss ? ' boss' : '');
+  const icon = w && WDEF[w.id] && ICONS[WDEF[w.id].icon];
+  row.innerHTML = '<span class="me">Du</span>' + (icon ? `<img src="${icon}">` : '') + (head && ICONS.hstrain ? `<img class="hs" src="${ICONS.hstrain}">` : '') +
+    `<span class="vic">${e.boss ? e.boss.name : (e.elite ? 'Elite-' : '') + (KF_NAMES[e.key] || e.key)}</span>`;
+  box.appendChild(row);
+  while (box.children.length > 5) box.firstChild.remove();
+  setTimeout(() => row.classList.add('old'), 4500);
+  setTimeout(() => row.remove(), 5000);
 }
 
 // ---------------------------------------------------------------- Sprites (Geld, Pickups, Kisten, Granaten, C4)
@@ -3105,6 +3301,7 @@ function updateGame(dt) {
   updateEnemies(dt);
   updateWeapons(dt);
   updateTurrets(dt);
+  updateRoombas(dt);
   updateShots(dt);
   updateNades(dt);
   updateDrops(dt);
@@ -3221,7 +3418,7 @@ function endRound(won) {
   }, won ? 1800 : 1300);
 }
 function restartRound() {
-  enemies = []; drops = []; eShots = []; nades = []; c4s = []; fx = []; zones = []; delayed = []; turrets = [];
+  enemies = []; drops = []; eShots = []; nades = []; c4s = []; fx = []; zones = []; delayed = []; turrets = []; roombas = []; $('#killfeed').innerHTML = '';
   Object.assign(game, { hp: 100, maxHp: 100, kills: 0, time: 0, over: false, won: false, spawnAcc: 0, flowT: 0, hurt: 0, deathT: 0,
     xp: 0, xpNext: xpNeed(1), level: 1, money: 0, pending: 0, weapons: [], passives: {}, bossIdx: 0, boss: null, shake: 0 });
   addWeapon('usp'); addWeapon('knife');
@@ -3292,6 +3489,7 @@ $('#restartBtn').addEventListener('click', () => { restartRound(); togglePause(f
   await buildSpriteAtlas();
   try { SND.raw = await loadPack('sounds'); } catch (err) { console.warn('Keine Sounds', err); }
   try { TURRET = await buildTurret(await loadPack('turret')); renderTurretIcon(); } catch (err) { console.warn('Kein Geschützturm', err); }
+  try { ROOMBA = buildRoomba(await loadPack('roomba')); renderRoombaIcon(); } catch (err) { console.warn('Kein Roomba', err); }
   await step(92, 'Berechne Wegnetz …');
   const tNav = performance.now();
   buildNav();
@@ -3315,7 +3513,7 @@ $('#restartBtn').addEventListener('click', () => { restartRound(); togglePause(f
   requestAnimationFrame(t => { last = t; frame(t); });
   // Test-Schnittstelle (fuer automatische Tests)
   window.__cs = { player, input, teleport, trace, SPOTS, WORLD, BSP, NAV, game, get enemies() { return enemies; }, settings,
-    get drops() { return drops; }, addXp, addWeapon, refreshStats, openChest, get zones() { return zones; }, dbg: () => JSON.stringify({nades: nades.length, c4: c4s.length, shots: eShots.length, fx: fx.length}), start: () => sb.click(), get PROPS() { return PROPS; }, RADAR, drawRadar, SND, sfx, get turrets() { return turrets; }, placeTurret, flowFrom,  setLight: v => LIGHT.splice(0, 3, ...v) };
+    get drops() { return drops; }, addXp, addWeapon, refreshStats, openChest, get zones() { return zones; }, dbg: () => JSON.stringify({nades: nades.length, c4: c4s.length, shots: eShots.length, fx: fx.length}), start: () => sb.click(), get PROPS() { return PROPS; }, RADAR, drawRadar, SND, sfx, get turrets() { return turrets; }, placeTurret, flowFrom, get roombas() { return roombas; }, get drops() { return drops; },  setLight: v => LIGHT.splice(0, 3, ...v) };
 })();
 </script>
 </body>
