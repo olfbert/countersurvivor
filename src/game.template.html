@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="C-Survivors">
 <meta name="theme-color" content="#1c1f17">
-<title>Counter-Survivors · de_dust</title>
+<title>Counter-Survivors</title>
 <style>
   :root { --hud: #ffb43c; --panel: rgba(28, 31, 23, .86); --line: rgba(255, 180, 60, .35); --txt: #e8dcc2; }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -60,6 +60,13 @@
   .rowline input[type=range] { flex: 1; accent-color: var(--hud); pointer-events: auto; }
   #start { background: radial-gradient(ellipse at center, rgba(28,31,23,.55), rgba(10,11,8,.92)); }
   #start .box { text-align: center; }
+  .maps { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 12px 0 2px; }
+  .maps button { min-width: 150px; text-align: left; padding: 7px 12px; line-height: 1.3; }
+  .maps button b { display: block; font-size: 15px; letter-spacing: .04em; }
+  .maps button span { font-size: 11px; opacity: .75; }
+  .maps button i { display: block; font-style: normal; font-size: 10px; color: #ffb43c; }
+  .maps button.on b { color: #1c1f17; }
+  .maps button.on i { color: #6b2a00; }
   #startBtn { font-size: 16px; padding: 12px 34px; margin-top: 10px; color: #1c1f17; background: var(--hud); font-weight: bold; letter-spacing: .1em; }
   #startBtn:disabled { opacity: .5; }
   .barwrap { width: 240px; height: 6px; border: 1px solid var(--line); margin: 12px auto 4px; }
@@ -160,7 +167,8 @@
 <div class="overlay show" id="start">
   <div class="box">
     <h1>COUNTER-SURVIVORS</h1>
-    <p class="muted">Mehr Waffen + Evolutionen · v__VERSION__</p>
+    <p class="muted">Mehr Maps · v__VERSION__</p>
+    <div class="maps" id="mapPick"></div>
     <div class="barwrap"><div class="barfill" id="loadbar"></div></div>
     <p class="muted" id="loadtxt">Lade Map …</p>
     <div id="err"></div>
@@ -327,10 +335,26 @@ in vec2 vUV; uniform sampler2D uTex; out vec4 o;
 void main() { o = vec4(texture(uTex, vUV).rgb, 1.0); }`);
 
 // ---------------------------------------------------------------- Paket laden
+const MAPS = [
+  { id: 'de_dust_cz', title: 'de_dust', sub: 'Condition Zero · Bombenentschärfung', file: null },
+  { id: 'cs_747', title: 'cs_747', sub: 'Flugzeug · Geiselrettung', file: 'maps/cs_747.bin', note: 'Texturen unvollständig' },
+];
+const MAP = (() => {
+  let id = null;
+  try { id = new URLSearchParams(location.search).get('map'); } catch (e) { /* kein Query */ }
+  return MAPS.find(m => m.id === (id || settings.map)) || MAPS[0];
+})();
 async function loadPack(id) {
-  const b64 = $('#' + id).textContent.trim();
-  const bin = atob(b64), raw = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) raw[i] = bin.charCodeAt(i);
+  let raw;
+  if (id === 'pack' && MAP.file) {
+    const r = await fetch(MAP.file).catch(() => null);
+    if (!r || !r.ok) throw new Error(`Map ${MAP.title} konnte nicht geladen werden (${MAP.file}). Sie lädt nur online über GitHub Pages.`);
+    raw = new Uint8Array(await r.arrayBuffer());
+  } else {
+    const b64 = $('#' + id).textContent.trim();
+    const bin = atob(b64); raw = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) raw[i] = bin.charCodeAt(i);
+  }
   const buf = raw[0] === 0x1f && raw[1] === 0x8b
     ? await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer()
     : raw.buffer;
@@ -365,6 +389,22 @@ const TOOL_TEX = new Set(['hint', 'skip', 'clip', 'null', 'origin', 'aaatrigger'
 const HIDDEN_CLASSES = new Set(['func_bomb_target', 'func_buyzone', 'func_hostage_rescue', 'func_vip_safetyzone', 'func_escapezone', 'func_ladder', 'func_mortar_field']);
 const NONSOLID_CLASSES = new Set(['func_illusionary']);
 const PROP_MODELS = new Set();   // Deko-Modelle, die schon als echtes Modell vorliegen
+// Tueren stehen offen (wie nach dem Beruehren im Original); "durchlaessige" Tueren (Flag 8) sind ohne Kollision.
+function doorOffset(e, m) {
+  if (e.classname !== 'func_door') return [0, 0, 0];
+  const ang = vec3(e.angles), yaw = e.angle !== undefined ? +e.angle : ang[1];
+  let dir;
+  if (yaw === -1) dir = [0, 0, 1];
+  else if (yaw === -2) dir = [0, 0, -1];
+  else { const pr = ang[0] * Math.PI / 180, yr = yaw * Math.PI / 180; dir = [Math.cos(yr) * Math.cos(pr), Math.sin(yr) * Math.cos(pr), -Math.sin(pr)]; }
+  if ((+e.spawnflags || 0) & 8) return [0, 0, 0];
+  const size = [m.maxs[0] - m.mins[0] - 2, m.maxs[1] - m.mins[1] - 2, m.maxs[2] - m.mins[2] - 2];
+  const dist = Math.abs(dir[0] * size[0]) + Math.abs(dir[1] * size[1]) + Math.abs(dir[2] * size[2]) - (+e.lip || 0);
+  return dir.map(c => c * dist);
+}
+const entOrigin = (e, m) => { const o = vec3(e.origin), d = doorOffset(e, m); return [o[0] + d[0], o[1] + d[1], o[2] + d[2]]; };
+const isSolidEnt = e => e.model && e.model[0] === '*' && !NONSOLID_CLASSES.has(e.classname) && !HIDDEN_CLASSES.has(e.classname) &&
+  !(e.classname || '').startsWith('trigger_') && e.classname !== 'func_door_rotating' && !(e.classname === 'func_door' && ((+e.spawnflags || 0) & 8));
 
 function parseEntities(text) {
   const ents = [];
@@ -459,7 +499,7 @@ function buildWorld(bsp, textures) {
   for (const e of bsp.entities) {
     if (!e.model || e.model[0] !== '*') continue;
     const cls = e.classname || '';
-    if (HIDDEN_CLASSES.has(cls) || cls.startsWith('trigger_')) continue;
+    if (HIDDEN_CLASSES.has(cls) || cls.startsWith('trigger_') || cls === 'func_door_rotating') continue;
     // GoldSrc: fehlt renderamt, ist es 0 -> bei Rendermode != normal unsichtbar (z. B. unsichtbare Sperren)
     let mode = +(e.rendermode || 0), amt = e.renderamt !== undefined ? +e.renderamt : (mode === 0 ? 255 : 0);
     if (mode !== 0 && amt === 0) {
@@ -470,7 +510,7 @@ function buildWorld(bsp, textures) {
       if (!prop) continue;
       mode = 0; amt = 255;
     }
-    drawModels.push({ model: +e.model.slice(1), origin: vec3(e.origin), mode, amt });
+    drawModels.push({ model: +e.model.slice(1), origin: entOrigin(e, bsp.models[+e.model.slice(1)]), mode, amt });
   }
   // 2) Flaechen sammeln, Lightmap-Groessen bestimmen
   const faces = [];
@@ -481,9 +521,9 @@ function buildWorld(bsp, textures) {
       const tiIdx = f.texinfo, mt = bsp.miptex[bsp.texinfo.mip[tiIdx]];
       if (!mt || TOOL_TEX.has(mt.name) || mt.name === 'sky' || mt.name.startsWith('sky')) continue;
       const vs = faceVerts(bsp, f);
-      if (dm.origin[0] || dm.origin[1] || dm.origin[2]) for (const v of vs) { v[0] += dm.origin[0]; v[1] += dm.origin[1]; v[2] += dm.origin[2]; }
       const tv = bsp.texinfo.v.subarray(tiIdx * 8, tiIdx * 8 + 8);
       const st = vs.map(v => [v[0] * tv[0] + v[1] * tv[1] + v[2] * tv[2] + tv[3], v[0] * tv[4] + v[1] * tv[5] + v[2] * tv[6] + tv[7]]);
+      if (dm.origin[0] || dm.origin[1] || dm.origin[2]) for (const v of vs) { v[0] += dm.origin[0]; v[1] += dm.origin[1]; v[2] += dm.origin[2]; }
       let minS = Infinity, minT = Infinity, maxS = -Infinity, maxT = -Infinity;
       for (const [s, t] of st) { minS = Math.min(minS, s); maxS = Math.max(maxS, s); minT = Math.min(minT, t); maxT = Math.max(maxT, t); }
       const bminS = Math.floor(minS / 16), bminT = Math.floor(minT / 16);
@@ -572,6 +612,22 @@ function buildWorld(bsp, textures) {
 }
 
 // ---------------------------------------------------------------- Himmel (6 Seiten, Konvention: rt=+X, ft=-Y, lf=-X, bk=+Y)
+// Ersatzhimmel: Verlauf vom Horizont zum Zenit, gefaerbt nach dem Sonnenlicht der Map
+function fallbackSky() {
+  const le = BSP.entities.find(e => e.classname === 'light_environment');
+  const lc = le && le._light ? le._light.split(/\s+/).slice(0, 3).map(Number) : [255, 240, 220];
+  const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+  const zen = mix([60, 100, 170], lc, 0.15), hor = mix([200, 205, 215], lc, 0.35), gnd = mix([70, 66, 60], lc, 0.1);
+  const css = c => `rgb(${c.join(',')})`;
+  const side = () => { const c = document.createElement('canvas'); c.width = c.height = 256; const x = c.getContext('2d');
+    const g = x.createLinearGradient(0, 0, 0, 256); g.addColorStop(0, css(zen)); g.addColorStop(0.5, css(hor)); g.addColorStop(0.56, css(mix(hor, gnd, 0.5))); g.addColorStop(1, css(gnd));
+    x.fillStyle = g; x.fillRect(0, 0, 256, 256); return c; };
+  const up = document.createElement('canvas'); up.width = up.height = 64; const ux = up.getContext('2d'); ux.fillStyle = css(zen); ux.fillRect(0, 0, 64, 64);
+  const tex = cv => { const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cv);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); return { tex: t }; };
+  const sideTex = tex(side());
+  return { rt: sideTex, ft: sideTex, lf: sideTex, bk: sideTex, up: tex(up) };
+}
 function buildSky(yawDeg) {
   const a = yawDeg * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a);
   const rot = p => [p[0] * ca - p[1] * sa, p[0] * sa + p[1] * ca, p[2]];
@@ -850,12 +906,25 @@ function findSpots() {
     SPOTS[name] = { o: dropToFloor(s.c[0], s.c[1], s.m.maxs[2] - 40, s.m.mins[2] - 128), yaw: fromCt };
   });
 }
+function findCsSpots() {
+  const E = BSP.entities;
+  const h = E.find(e => e.classname === 'hostage_entity');
+  if (h) { const o = vec3(h.origin); SPOTS.h = { o: dropToFloor(o[0], o[1], o[2] + 40, o[2] - 200), yaw: 0 }; }
+  const r = E.find(e => e.classname === 'func_hostage_rescue' && e.model) || E.find(e => e.classname === 'info_hostage_rescue');
+  if (r) {
+    let c;
+    if (r.model) { const m = BSP.models[+r.model.slice(1)]; c = [(m.mins[0] + m.maxs[0]) / 2, (m.mins[1] + m.maxs[1]) / 2, m.maxs[2] + 20]; }
+    else c = vec3(r.origin);
+    SPOTS.r = { o: dropToFloor(c[0], c[1], c[2], c[2] - 300), yaw: 0 };
+  }
+}
+const SPOT_LABELS = { ct: 'CT-Spawn', t: 'T-Spawn', a: 'Bombsite A', b: 'Bombsite B', h: 'Geiseln', r: 'Rettungszone' };
 function teleport(name) {
   const s = SPOTS[name];
   if (!s) return;
   // minimal versetzt: Auge nie exakt ueber einem Eckpunkt (sonst Clipping-Sonderfall bei Blick geradeaus)
   player.o = [s.o[0] + 0.37, s.o[1] + 0.29, s.o[2]]; player.v = [0, 0, 0]; player.yaw = s.yaw; player.pitch = 0; player.stepSmooth = 0;
-  toast({ ct: 'CT-Spawn', t: 'T-Spawn', a: 'Bombsite A', b: 'Bombsite B' }[name]);
+  toast(SPOT_LABELS[name]);
 }
 
 // =====================================================================
@@ -1701,21 +1770,26 @@ function targets() {
   tgtList.sort((a, b) => a.ang - b.ang);
   return tgtList;
 }
-function isVisible(c) {
-  if (c.vis === undefined) {
-    const eye = eyePos(), e = c.e;
-    c.vis = c.e.state === ALIVE && (trace(eye, [e.x, e.y, c.tz], 0).fraction > 0.995 || trace(eye, [e.x, e.y, e.z + 62 * e.scale], 0).fraction > 0.995);
-  }
-  return c.vis && c.e.state === ALIVE;
+// Sichtbarkeit wird pro Gegner kurz zwischengespeichert; pro Frame hoechstens LOS_BUDGET neue Pruefungen.
+// So blockieren verdeckte Gegner nahe am Fadenkreuz nie die Suche nach sichtbaren.
+const LOS_BUDGET = 40, LOS_TTL = 0.15;
+let losLeft = 0, losFrame = -1;
+function enemyVisible(e, tz) {
+  if (losFrame !== frameNo) { losFrame = frameNo; losLeft = LOS_BUDGET; }
+  if (e.visT !== undefined && game.time - e.visT < LOS_TTL) return e.vis;
+  if (losLeft <= 0) return !!e.vis;          // noch nicht dran: letzter bekannter Stand
+  losLeft--;
+  const eye = eyePos();
+  e.visT = game.time;
+  e.vis = trace(eye, [e.x, e.y, tz], 0).fraction > 0.995 || trace(eye, [e.x, e.y, e.z + 62 * e.scale], 0).fraction > 0.995;
+  return e.vis;
 }
-// bis zu n sichtbare Ziele in Reichweite, Fadenkreuz-naechste zuerst (hoechstens 12 Sichtpruefungen)
+// bis zu n sichtbare Ziele in Reichweite, Fadenkreuz-naechste zuerst
 function visibleTargets(range, n) {
   const L = targets(), out = [];
-  let checks = 0;
   for (const c of L) {
-    if (c.d > range) continue;
-    if (c.vis === undefined && ++checks > 12) break;
-    if (isVisible(c)) { out.push(c); if (out.length >= n) break; }
+    if (c.d > range || c.e.state !== ALIVE) continue;
+    if (enemyVisible(c.e, c.tz)) { out.push(c); if (out.length >= n) break; }
   }
   return out;
 }
@@ -2022,6 +2096,13 @@ function toast(msg) {
   const t = $('#toast'); t.textContent = msg; t.classList.add('show');
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 1600);
 }
+// Map-Auswahl: andere Map = Seite mit ?map=... neu laden
+$('#mapPick').innerHTML = MAPS.map(m => `<button data-map="${m.id}" class="${m.id === MAP.id ? 'on' : ''}"><b>${m.title}</b><span>${m.sub}</span>${m.note ? `<i>${m.note}</i>` : ''}</button>`).join('');
+document.querySelectorAll('#mapPick button').forEach(b => b.addEventListener('click', () => {
+  if (b.dataset.map === MAP.id) return;
+  settings.map = b.dataset.map; saveSettings();
+  location.search = '?map=' + b.dataset.map;
+}));
 const CTRL_TOUCH = 'Linker Daumen: laufen · rechter Daumen: umschauen · Knopf rechts unten: springen · Schießen geht von selbst';
 const CTRL_PC = 'WASD: laufen · Maus: umschauen (Klick fängt die Maus) · Leertaste: springen · Shift: gehen · Esc: Pause · Schießen geht von selbst';
 $('#ctrlHint').textContent = IS_TOUCH ? CTRL_TOUCH : CTRL_PC;
@@ -2056,7 +2137,7 @@ function togglePause(on) {
 }
 function buildTeleportButtons() {
   const g = $('#tpGrid'); g.innerHTML = '';
-  for (const [k, label] of [['ct', 'CT-Spawn'], ['t', 'T-Spawn'], ['a', 'Bombsite A'], ['b', 'Bombsite B']]) {
+  for (const [k, label] of Object.entries(SPOT_LABELS)) {
     if (!SPOTS[k]) continue;
     const b = document.createElement('button'); b.textContent = label;
     b.addEventListener('click', () => { teleport(k); togglePause(false); });
@@ -2553,9 +2634,9 @@ $('#restartBtn').addEventListener('click', () => { restartRound(); togglePause(f
 (async () => {
   const bar = $('#loadbar'), txt = $('#loadtxt');
   const step = (pct, msg) => { bar.style.width = pct + '%'; txt.textContent = msg; return new Promise(r => setTimeout(r, 0)); };
-  await step(5, 'Entpacke Daten …');
+  await step(5, MAP.file ? `Lade ${MAP.title} …` : 'Entpacke Daten …');
   const { man, part } = await loadPack('pack');
-  await step(20, 'Lese de_dust …');
+  await step(20, `Lese ${MAP.title} …`);
   BSP = parseBSP(part(man.bsp));
   await step(35, 'Lade Texturen …');
   const names = Object.keys(man.textures);
@@ -2569,15 +2650,16 @@ $('#restartBtn').addEventListener('click', () => { restartRound(); togglePause(f
     x.fillStyle = '#8a8070'; x.fillRect(0, 0, 16, 16); x.fillStyle = '#6d6556'; x.fillRect(0, 0, 8, 8); x.fillRect(8, 8, 8, 8);
     const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c);
     gl.generateMipmap(gl.TEXTURE_2D); fallbackTex = { tex: t, w: 16, h: 16 }; }
-  for (const [k, r] of Object.entries(man.sky)) SKYTEX[k] = await loadTexture(part(r), 'image/jpeg', { repeat: false, mips: false });
+  if (man.sky) for (const [k, r] of Object.entries(man.sky)) SKYTEX[k] = await loadTexture(part(r), 'image/jpeg', { repeat: false, mips: false });
   await step(80, 'Baue Geometrie und Licht …');
   WORLD = buildWorld(BSP, TEX);
   SKY = buildSky(man.skyYaw || 0);
+  if (!man.sky) SKYTEX = fallbackSky();
   // feste Brush-Entities fuer die Kollision
-  SOLIDS = BSP.entities.filter(e => e.model && e.model[0] === '*' && !NONSOLID_CLASSES.has(e.classname) &&
-    !HIDDEN_CLASSES.has(e.classname) && !(e.classname || '').startsWith('trigger_'))
-    .map(e => ({ model: BSP.models[+e.model.slice(1)], origin: vec3(e.origin), cls: e.classname }));
+  SOLIDS = BSP.entities.filter(isSolidEnt)
+    .map(e => ({ model: BSP.models[+e.model.slice(1)], origin: entOrigin(e, BSP.models[+e.model.slice(1)]), cls: e.classname }));
   findSpots();
+  findCsSpots();
   buildTeleportButtons();
   teleport('ct');
   // Sonnenrichtung aus light_environment (fuer die Schattierung der Figuren)

@@ -11,6 +11,7 @@ Ego-Shooter im Stil von Counter-Strike 1.6, der sich wie Vampire Survivors spiel
 
 | Version | Phase | Inhalt |
 | --- | --- | --- |
+| v0.5 | Mehr Maps | Map-Auswahl im Startbildschirm; zweite Map cs_747 (Flugzeug, Geiselrettung) wird aus `maps/` nachgeladen; Türen stehen offen, Teleport zu Geiseln und Rettungszone; Ersatzhimmel für Maps ohne Himmelsbilder; **Fix:** bei vielen Gegnern hinter Wänden hörten die Waffen auf zu schießen |
 | v0.4 | Mehr Waffen + Evolutionen | 6 neue Waffen (AWP, M249, Dual Elites, Flashbang, Rauchgranate, C4) und 3 neue Ausrüstungen (Headshot-Training, Nachtsicht, Magazinerweiterung) – zusammen 14 Waffen und 9 Ausrüstungen; 14 Evolutionen über Waffenkisten (z. B. Goldene AK, Wallbang-AWP, Messerwirbel, Giftnebel); Evolutionsliste im Menü; neue Schwierigkeitskurve (leichter Start, deutlich härteres Ende, stärkere Bosse, steilere XP-Kurve); Kollisionsboxen der fehlenden Deko-Modelle als Platzhalter sichtbar |
 | v0.3 | Phase 3 · Survivors-Loop | 15-Minuten-Runde mit Countdown; Geld als Erfahrung (Scheine einsammeln); Level-Up öffnet das Kaufmenü mit 3 Angeboten und CZ-Icons; 8 Waffen (USP, Messer, Glock, Desert Eagle, MP5, M3, AK-47, HE-Granate) und 6 Ausrüstungen (Kevlar, Helm, Laufschuhe, Schnellladen, Hohlspitz, Defuse-Kit) mit Stufen; Wellen mit wachsendem Typ-Mix, Elites, Guerilla-Schützen, Militia-Bomber; Boss bei 5:00 (Der Riese) und 10:00 (Der Bombenleger); Pickups und Waffenkisten; Sieg- und Niederlagen-Auswertung pro Waffe; schärfere Darstellung |
 | v0.2 | Phase 2 · Erste Horde | Terroristen (5 Modelle) mit Lauf-, Messer- und Todesanimationen, beleuchtet aus den Lightmaps; Wegnetz automatisch aus der Map (16er-Raster, Ebenen, Stufen) mit Flow-Field zum Spieler; Spawns außer Sicht; USP mit Autoshoot auf das fadenkreuznächste sichtbare Ziel (Magazin, Nachladen, Headshots); Messer rundum; Spielertod mit Todeskamera; Testmenü (Gegnerzahl, Unverwundbar) |
@@ -18,6 +19,15 @@ Ego-Shooter im Stil von Counter-Strike 1.6, der sich wie Vampire Survivors spiel
 | – | Modelltest | 11 Spielermodelle mit GPU-Skinning und Instancing, 14 Animationen, bis 600 Gegner |
 
 Als Nächstes: **weitere Maps mit Level-Auswahl** und die Deko-Modelle (Fässer, Jeep, Lkw, Markisen); danach **Phase 4 · CS-Seele** (Radar, Bomben-Event auf A/B, Sounds, Killfeed, Titel, Teamwahl).
+
+## Maps
+
+| Map | Datei | Stand |
+| --- | --- | --- |
+| de_dust (Condition Zero) | in `index.html` eingebettet | vollständig; Deko-Modelle (Fässer, Jeep, Lkw) noch als Platzhalter-Boxen |
+| cs_747 | `maps/cs_747.bin` | spielbar; Texturen aus halflife.wad, liquids.wad und cstrike.wad fehlen noch (grau), Himmel ist Ersatz |
+
+Weitere Maps sind nur Daten: BSP + WADs (+ Himmel) packen, in `maps/` legen und in der Map-Liste der Vorlage eintragen. Nachgeladene Maps funktionieren nur online (GitHub Pages), nicht als lokale Datei.
 
 ## Steuerung
 
@@ -42,10 +52,11 @@ tools/build.py        setzt Pakete (Base64/JSON) und Version in eine Vorlage ein
 Bauen (Pfade zu den eigenen Spieldateien anpassen):
 
 ```
-python3 tools/pack_map.py de_dust_cz.bsp czde_dust.wad himmel/ map.bin && gzip -9 -k map.bin
+python3 tools/pack_map.py map.bin de_dust_cz.bsp --wad czde_dust.wad --sky-dust himmel/ && gzip -9 -k map.bin
+python3 tools/pack_map.py cs_747.bin cs_747.bsp --wad cs_747.wad --wad halflife.wad --wad liquids.wad --wad cstrike.wad && gzip -9 -c cs_747.bin > maps/cs_747.bin
 python3 tools/convert_mdl.py models/ czde_dust.wad models.bin terror,leet,arctic,guerilla,militia && gzip -9 -k models.bin
 python3 tools/pack_icons.py gfx/ czde_dust.wad icons.json
-python3 tools/build.py src/game.template.html index.html 0.4 PACK=map.bin.gz MODELS=models.bin.gz ICONS=@icons.json
+python3 tools/build.py src/game.template.html index.html 0.5 PACK=map.bin.gz MODELS=models.bin.gz ICONS=@icons.json
 ```
 
 Die BSP wird erst im Browser gelesen (Geometrie, Lightmaps, Kollision, Spawns, Bombsites). Weitere Maps sind damit später nur ein neues Datenpaket.

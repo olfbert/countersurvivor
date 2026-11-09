@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Map-Paket fuer Counter-Survivors Phase 1.
 
-Aufruf: python3 -I pack_map.py <bsp> <wad> <skydir> <out.bin>
+Aufruf: python3 -I pack_map.py <out.bin> <bsp> --wad <a.wad> [--wad <b.wad> ...] [--sky-dust <ordner>]
 Inhalt: BSP (ohne VIS/Marksurfaces), alle benutzten Texturen als PNG, Himmel (6 Seiten).
 Aufbau: [u32 Laenge JSON][JSON, auf 4 aufgefuellt][Binaerteil]; Offsets relativ zum Binaerteil.
 """
 import io
 import json
 import struct
+import zlib
 import sys
 
 import numpy as np
@@ -52,15 +53,17 @@ def bsp_textures(d):
     return res
 
 
-def wad_index(wad):
-    d = open(wad, "rb").read()
-    magic, n, off = struct.unpack("<4sii", d[:12])
+def wad_index(wads):
+    """Mehrere WADs; spaetere ueberschreiben fruehere nicht (erste Fundstelle gilt, wie in der Engine)."""
     idx = {}
-    for i in range(n):
-        e = d[off + i * 32: off + (i + 1) * 32]
-        filepos = struct.unpack("<i", e[:4])[0]
-        idx[cstr(e[16:32]).lower()] = filepos
-    return d, idx
+    for wad in wads:
+        d = open(wad, "rb").read()
+        magic, n, off = struct.unpack("<4sii", d[:12])
+        for i in range(n):
+            e = d[off + i * 32: off + (i + 1) * 32]
+            filepos = struct.unpack("<i", e[:4])[0]
+            idx.setdefault(cstr(e[16:32]).lower(), (d, filepos))
+    return idx
 
 
 def wad_image(d, filepos, name):
@@ -104,16 +107,29 @@ def jpg(img, q=90):
 
 
 def fallback(name, w, h):
-    """Ersatz fuer Texturen, die nicht in der WAD stecken."""
-    w, h = max(16, w), max(16, h)
-    if "lgt" in name.lower() or "light" in name.lower():
+    """Ersatz fuer Texturen, die in keiner WAD stecken (neutral, nach Namen leicht eingefaerbt)."""
+    w, h = max(16, min(w, 256)), max(16, min(h, 256))
+    n = name.lower().lstrip('+-~!{0123456789a')
+    solid = {"black": (12, 12, 12), "red": (150, 30, 25), "white": (225, 225, 220), "blue": (40, 60, 140)}
+    for k, c in solid.items():
+        if n == k:
+            return Image.new("RGB", (w, h), c), False
+    if "lgt" in n or "light" in n or name.startswith("~"):
         img = Image.new("RGB", (w, h), (255, 244, 214))
-        dr = ImageDraw.Draw(img)
-        dr.rectangle([0, 0, w - 1, h - 1], outline=(150, 132, 104), width=max(1, w // 16))
-        return img
-    rng = np.random.default_rng(11)
-    base = rng.normal(132, 9, (h, w)).clip(0, 255).astype(np.uint8)
-    return Image.fromarray(np.stack([base, (base * 0.97).astype(np.uint8), (base * 0.9).astype(np.uint8)], -1))
+        ImageDraw.Draw(img).rectangle([0, 0, w - 1, h - 1], outline=(150, 132, 104), width=max(1, w // 16))
+        return img, False
+    rng = np.random.default_rng(zlib.crc32(n.encode()))
+    tint = [(150, 145, 135), (135, 140, 145), (150, 140, 120), (125, 130, 125)][zlib.crc32(n.encode()) % 4]
+    base = rng.normal(0, 7, (h, w))
+    arr = np.stack([np.clip(base + t, 0, 255) for t in tint], -1)
+    # dezentes Raster, damit man Flaechen und Massstab erkennt
+    arr[::32, :, :] *= 0.85; arr[:, ::32, :] *= 0.85
+    img = Image.fromarray(arr.astype(np.uint8))
+    if name.startswith("{"):   # maskiert (Gitter, Zaun): durchsichtiges Muster statt fester Wand
+        a = np.zeros((h, w), np.uint8); a[::8, :] = 255; a[:, ::8] = 255; a[1::8, :] = 255; a[:, 1::8] = 255
+        img = img.convert("RGBA"); img.putalpha(Image.fromarray(a))
+        return img, True
+    return img, False
 
 
 def edge_diff(a, b):
@@ -121,8 +137,14 @@ def edge_diff(a, b):
 
 
 def main():
-    bsp_path, wad_path, skydir, out = sys.argv[1:5]
-    bsp = open(bsp_path, "rb").read()
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("out"); ap.add_argument("bsp")
+    ap.add_argument("--wad", action="append", default=[])
+    ap.add_argument("--sky-dust", help="Ordner mit img1..img6.jpg (de_dust, per Kantenabgleich zugeordnet)")
+    args = ap.parse_args()
+    bsp = open(args.bsp, "rb").read()
+    out = args.out
     blobs = bytearray()
 
     def add(b):
@@ -136,7 +158,7 @@ def main():
     man = {"bsp": None, "textures": {}, "sky": {}, "skyYaw": 0}
     stripped = strip_bsp(bsp)
     man["bsp"] = add(stripped)
-    wd, widx = wad_index(wad_path)
+    widx = wad_index(args.wad)
     total = 0
     for t in bsp_textures(bsp):
         if t is None:
@@ -146,14 +168,14 @@ def main():
         if key in TOOL_TEXTURES or key in man["textures"]:
             continue
         if key in widx:
-            img, masked = wad_image(wd, widx[key], name)
+            img, masked = wad_image(widx[key][0], widx[key][1], name)
             data = png(img)
             man["textures"][key] = {"data": add(data), "w": img.width, "h": img.height, "masked": masked, "type": "image/png"}
             src = "WAD"
         else:
-            img = fallback(name, w, h)
+            img, masked = fallback(name, w, h)
             data = png(img)
-            man["textures"][key] = {"data": add(data), "w": img.width, "h": img.height, "masked": False, "type": "image/png", "fallback": True}
+            man["textures"][key] = {"data": add(data), "w": w, "h": h, "masked": masked, "type": "image/png", "fallback": True}
             src = "Ersatz"
         total += len(data)
         print(f"  {name:20s} {w}x{h} {len(data) // 1024:4d} KB {src}")
@@ -163,6 +185,15 @@ def main():
     # Zyklus nach rechts img2 -> img6 -> img5 -> img3; Oberkanten passen zum Up-Bild (img4).
     # Konvention im Renderer: rt=+X, ft=-Y, lf=-X, bk=+Y; Up-Bild: unterste Zeile (links->rechts) = Oberkante ft.
     # Mit skyYaw=+90 Grad liegt die Sonne bei ~233 Grad (Lightmaps: hellste Waende bei ~225 Grad).
+    if not args.sky_dust:
+        man["sky"] = None
+        js = json.dumps(man, separators=(",", ":")).encode("utf-8")
+        while len(js) % 4:
+            js += b" "
+        open(out, "wb").write(struct.pack("<I", len(js)) + js + bytes(blobs))
+        print("Paket (ohne Himmel):", (4 + len(js) + len(blobs)) // 1024, "KB")
+        return
+    skydir = args.sky_dust
     im = {i: Image.open(f"{skydir}/img{i}.jpg").convert("RGB") for i in range(1, 7)}
     faces = {"ft": im[3], "lf": im[2], "bk": im[6], "rt": im[5], "up": im[4]}
     # Pruefen: Oberkante ft == unterste Zeile up; rechte Kante rt == linke Kante ft usw.
