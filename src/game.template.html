@@ -26,6 +26,10 @@
   #hud { display: none; }
   #hud.show { display: block; }
   #menuBtn { position: absolute; top: max(8px, env(safe-area-inset-top)); left: max(10px, env(safe-area-inset-left)); min-width: 44px; font-size: 18px; padding: 4px 10px; }
+  #radar { position: absolute; inset: auto; top: max(8px, env(safe-area-inset-top)); right: max(10px, env(safe-area-inset-right)); width: 128px; height: 128px;
+    border-radius: 50%; pointer-events: none; box-shadow: 0 0 0 1px rgba(255, 180, 60, .35), 0 2px 8px rgba(0, 0, 0, .5); }
+  #radar.off { display: none; }
+  #hud.radar #stats { top: max(144px, calc(env(safe-area-inset-top) + 136px)); }
   #stats { position: absolute; top: max(10px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); text-align: right;
     font: 12px/1.35 ui-monospace, Menlo, Consolas, monospace; color: var(--hud); text-shadow: 0 1px 2px #000; pointer-events: none; }
   #cross { position: absolute; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; }
@@ -147,6 +151,7 @@
 <div id="hud">
   <div id="cross"><i></i><i></i><i></i><i></i></div>
   <button id="menuBtn" aria-label="Menü">☰</button>
+  <canvas id="radar"></canvas>
   <div id="stats"></div>
   <div id="hurt"></div>
   <div id="muzzle"></div>
@@ -167,7 +172,7 @@
 <div class="overlay show" id="start">
   <div class="box">
     <h1>COUNTER-SURVIVORS</h1>
-    <p class="muted">Mehr Maps · v__VERSION__</p>
+    <p class="muted">Props &amp; Radar · v__VERSION__</p>
     <div class="maps" id="mapPick"></div>
     <div class="barwrap"><div class="barfill" id="loadbar"></div></div>
     <p class="muted" id="loadtxt">Lade Map …</p>
@@ -206,6 +211,7 @@
       <button id="resBtn"></button>
       <button id="fpsBtn"></button>
       <button id="bhopBtn"></button>
+      <button id="radarBtn"></button>
     </div>
     <h2>Evolutionen</h2>
     <p class="muted" style="margin-top:0">Waffe auf Stufe 8 + passende Ausrüstung, dann eine Waffenkiste von Elites oder Bossen aufsammeln.</p>
@@ -249,7 +255,7 @@ const aniso = gl.getExtension('EXT_texture_filter_anisotropic');
 
 // ---------------------------------------------------------------- Einstellungen (lokal, optional)
 const SETTINGS_KEY = 'countersurvivors.settings.v1';
-const settings = Object.assign({ sens: 1, res: 1, fps: true, autoBhop: false, enemies: 2 }, (() => {
+const settings = Object.assign({ sens: 1, res: 1, fps: true, autoBhop: false, enemies: 2, radar: true }, (() => {
   try { return JSON.parse(localStorage.getItem(SETTINGS_KEY)) || {}; } catch (e) { return {}; }
 })());
 const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* egal */ } };
@@ -337,7 +343,7 @@ void main() { o = vec4(texture(uTex, vUV).rgb, 1.0); }`);
 // ---------------------------------------------------------------- Paket laden
 const MAPS = [
   { id: 'de_dust_cz', title: 'de_dust', sub: 'Condition Zero · Bombenentschärfung', file: null },
-  { id: 'cs_747', title: 'cs_747', sub: 'Flugzeug · Geiselrettung', file: 'maps/cs_747.bin', note: 'Texturen unvollständig' },
+  { id: 'cs_747', title: 'cs_747', sub: 'Flugzeug · Geiselrettung', file: 'maps/cs_747.bin' },
 ];
 const MAP = (() => {
   let id = null;
@@ -917,6 +923,23 @@ function findCsSpots() {
     else c = vec3(r.origin);
     SPOTS.r = { o: dropToFloor(c[0], c[1], c[2], c[2] - 300), yaw: 0 };
   }
+}
+// Spots ohne Wegnetz darunter (z. B. Geiseln zwischen Sitzreihen) auf den naechsten begehbaren Knoten setzen,
+// sonst findet der Director keinen Startknoten und es kommen keine Gegner
+function snapSpots() {
+  const out = {};
+  for (const [k, s] of Object.entries(SPOTS)) {
+    const feet = s.o[2] - 36;
+    if (navNodeAt(s.o[0], s.o[1], feet, 30) >= 0) continue;
+    let best = -1, bd = Infinity;
+    for (let i = 0; i < NAV.n; i++) {
+      const dz = Math.abs(NAV.z[i] - feet); if (dz > 120) continue;
+      const d = Math.hypot(NAV.x[i] - s.o[0], NAV.y[i] - s.o[1]) + dz * 2;
+      if (d < bd) { bd = d; best = i; }
+    }
+    if (best >= 0 && bd < 500) { s.o = [NAV.x[best], NAV.y[best], NAV.z[best] + 36.03]; out[k] = Math.round(bd); }
+  }
+  return out;
 }
 const SPOT_LABELS = { ct: 'CT-Spawn', t: 'T-Spawn', a: 'Bombsite A', b: 'Bombsite B', h: 'Geiseln', r: 'Rettungszone' };
 function teleport(name) {
@@ -2116,6 +2139,10 @@ function refreshMenu() {
   $('#bhopBtn').textContent = 'Auto-Bhop: ' + (settings.autoBhop ? 'an' : 'aus');
   $('#bhopBtn').classList.toggle('on', settings.autoBhop);
   $('#stats').style.display = settings.fps ? '' : 'none';
+  $('#radarBtn').textContent = 'Radar: ' + (settings.radar ? 'an' : 'aus');
+  $('#radarBtn').classList.toggle('on', settings.radar);
+  $('#radar').classList.toggle('off', !settings.radar || !RADAR.img);
+  $('#hud').classList.toggle('radar', settings.radar && !!RADAR.img);
   refreshTestMenu();
   $('#evoList').innerHTML = Object.entries(EVOS).map(([id, E]) => {
     const w = game.weapons.find(x => x.id === id);
@@ -2126,6 +2153,7 @@ $('#sens').addEventListener('input', e => { settings.sens = +e.target.value; sav
 $('#resBtn').addEventListener('click', () => { settings.res = (settings.res + 1) % RESOLUTIONS.length; saveSettings(); refreshMenu(); });
 $('#fpsBtn').addEventListener('click', () => { settings.fps = !settings.fps; saveSettings(); refreshMenu(); });
 $('#bhopBtn').addEventListener('click', () => { settings.autoBhop = !settings.autoBhop; saveSettings(); refreshMenu(); });
+$('#radarBtn').addEventListener('click', () => { settings.radar = !settings.radar; saveSettings(); refreshMenu(); });
 $('#menuBtn').addEventListener('click', () => togglePause(true));
 $('#resumeBtn').addEventListener('click', () => togglePause(false));
 function togglePause(on) {
@@ -2192,6 +2220,7 @@ function render() {
   gl.enable(gl.DEPTH_TEST); gl.depthMask(true);
   gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK); gl.frontFace(gl.CCW);
   drawWorld(VP, false);
+  drawProps(VP);
   drawShadows(VP);
   drawEnemies(VP);
   drawSprites(VP, yaw);
@@ -2225,6 +2254,207 @@ function drawWorld(VP, translucent) {
   }
   gl.disable(gl.BLEND); gl.depthMask(true); gl.enable(gl.CULL_FACE);
   gl.bindVertexArray(null);
+}
+
+
+// ---------------------------------------------------------------- Deko-Modelle (cycler_sprite, env_model): fest eingerechnet, Licht vom Boden darunter
+const PROP_CLASSES = new Set(['cycler_sprite', 'env_model', 'cycler', 'monster_furniture', 'item_generic']);
+const progProp = program(`#version 300 es
+precision highp float;
+layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNrm; layout(location=2) in vec2 aUV; layout(location=3) in vec3 aLight;
+uniform mat4 uVP; out vec2 vUV; out vec3 vN; out vec3 vL;
+void main() { vUV = aUV; vN = aNrm; vL = aLight; gl_Position = uVP * vec4(aPos, 1.0); }`, `#version 300 es
+precision mediump float;
+in vec2 vUV; in vec3 vN; in vec3 vL; uniform sampler2D uTex; uniform vec3 uSun; uniform float uMasked; out vec4 o;
+void main() {
+  vec4 c = texture(uTex, vUV);
+  if (c.a < 0.5 * uMasked) discard;
+  float d = dot(normalize(vN), uSun);
+  o = vec4(c.rgb * vL * (0.62 + 0.55 * max(d, 0.0)), 1.0);
+}`);
+let PROPS = null, PROP_DATA = null;
+// Helligkeit wie GoldSrc (R_LightPoint): Boden unter dem Modell, hier aus den naechsten Wegnetz-Knoten
+function propLight(x, y, z) {
+  if (!NAV.n) return [1, 1, 1];
+  const cx = Math.floor((x - NAV.ox) / CELL), cy = Math.floor((y - NAV.oy) / CELL), found = [];
+  for (let r = 0; r <= 16 && found.length < 6; r++) {
+    for (let iy = cy - r; iy <= cy + r; iy++) for (let ix = cx - r; ix <= cx + r; ix++) {
+      if (Math.max(Math.abs(ix - cx), Math.abs(iy - cy)) !== r || ix < 0 || iy < 0 || ix >= NAV.W || iy >= NAV.H) continue;
+      const ci = iy * NAV.W + ix, s = NAV.colStart[ci]; if (s < 0) continue;
+      let best = -1;
+      for (let k = 0; k < NAV.colCount[ci]; k++) { const nz = NAV.z[s + k]; if (nz <= z + 24 && (best < 0 || nz > NAV.z[best])) best = s + k; }
+      if (best >= 0) found.push(best);
+    }
+  }
+  if (!found.length) return [1, 1, 1];
+  let w = 0; const L = [0, 0, 0];
+  for (const i of found) { const k = 1 / (Math.hypot(NAV.x[i] - x, NAV.y[i] - y) + 16); w += k; for (let c = 0; c < 3; c++) L[c] += NAV.light[i * 3 + c] * k; }
+  return L.map(v => v / w);
+}
+function buildProps(P) {
+  const out = [], idx = [];
+  let n = 0, count = 0;
+  for (const e of BSP.entities) {
+    if (!PROP_CLASSES.has(e.classname)) continue;
+    const M = P.mesh[(e.model || '').toLowerCase()];
+    if (!M) continue;
+    if (+(e.rendermode || 0) !== 0 && e.renderamt !== undefined && +e.renderamt === 0) continue;
+    const o = vec3(e.origin), ang = e.angles !== undefined ? vec3(e.angles) : [0, +(e.angle || 0), 0], sc = +(e.scale || 1) || 1;
+    const [pi, ya, ro] = ang.map(v => v * Math.PI / 180);
+    const sp = Math.sin(pi), cp = Math.cos(pi), sy = Math.sin(ya), cy = Math.cos(ya), sr = Math.sin(ro), cr = Math.cos(ro);
+    // HL AngleMatrix: Gier um Z, Neigung um Y, Rollen um X
+    const R = [cp * cy, sr * sp * cy - cr * sy, cr * sp * cy + sr * sy,
+               cp * sy, sr * sp * sy + cr * cy, cr * sp * sy - sr * cy,
+               -sp, sr * cp, cr * cp];
+    const V = M.v, nv = M.numVerts, W = new Float32Array(nv * 6);
+    let minZ = Infinity;
+    for (let i = 0; i < nv; i++) {
+      const x = V[i * 8], y = V[i * 8 + 1], z = V[i * 8 + 2], a = V[i * 8 + 3], b = V[i * 8 + 4], c = V[i * 8 + 5];
+      W[i * 6] = o[0] + sc * (R[0] * x + R[1] * y + R[2] * z);
+      W[i * 6 + 1] = o[1] + sc * (R[3] * x + R[4] * y + R[5] * z);
+      W[i * 6 + 2] = o[2] + sc * (R[6] * x + R[7] * y + R[8] * z);
+      W[i * 6 + 3] = R[0] * a + R[1] * b + R[2] * c; W[i * 6 + 4] = R[3] * a + R[4] * b + R[5] * c; W[i * 6 + 5] = R[6] * a + R[7] * b + R[8] * c;
+      minZ = Math.min(minZ, W[i * 6 + 2]);
+    }
+    const L = propLight(o[0], o[1], minZ);
+    for (let i = 0; i < nv; i++) out.push(W[i * 6], W[i * 6 + 1], W[i * 6 + 2], W[i * 6 + 3], W[i * 6 + 4], W[i * 6 + 5], V[i * 8 + 6], V[i * 8 + 7], L[0], L[1], L[2]);
+    for (const k of M.idx) idx.push(n + k);
+    n += nv; count++;
+  }
+  if (!count) return null;
+  const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+  const vb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vb); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(out), gl.STATIC_DRAW);
+  const st = 44;
+  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 3, gl.FLOAT, false, st, 0);
+  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, st, 12);
+  gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 2, gl.FLOAT, false, st, 24);
+  gl.enableVertexAttribArray(3); gl.vertexAttribPointer(3, 3, gl.FLOAT, false, st, 32);
+  const ib = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(idx), gl.STATIC_DRAW);
+  gl.bindVertexArray(null);
+  return { vao, count: idx.length, tex: P.tex, masked: P.masked, instances: count, tris: idx.length / 3 };
+}
+function drawProps(VP) {
+  if (!PROPS) return;
+  gl.useProgram(progProp.p);
+  gl.uniformMatrix4fv(progProp.u.uVP, false, VP);
+  gl.uniform3fv(progProp.u.uSun, SUN);
+  gl.uniform1f(progProp.u.uMasked, PROPS.masked ? 1 : 0);
+  gl.uniform1i(progProp.u.uTex, 0);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, PROPS.tex.tex);
+  if (PROPS.masked) gl.disable(gl.CULL_FACE);
+  gl.bindVertexArray(PROPS.vao);
+  gl.drawElements(gl.TRIANGLES, PROPS.count, gl.UNSIGNED_INT, 0);
+  gl.bindVertexArray(null); gl.enable(gl.CULL_FACE);
+}
+
+// ---------------------------------------------------------------- Radar: Uebersichtskarte (falls mitgeliefert) oder einmal von oben gerendert
+const RADAR = { img: null, M: null, range: 1500, cv: null, ctx: null, src: '' };
+async function buildRadar(man, part) {
+  RADAR.cv = $('#radar'); RADAR.ctx = RADAR.cv.getContext('2d');
+  if (man.overview) {
+    RADAR.img = await createImageBitmap(new Blob([part(man.overview.data)], { type: man.overview.type }));
+    RADAR.M = man.overview.M; RADAR.src = 'overview';
+    return;
+  }
+  // Bereich des Wegnetzes, von oben orthografisch gerendert
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity, zLo = Infinity, zHi = -Infinity;
+  for (let i = 0; i < NAV.n; i++) {
+    x0 = Math.min(x0, NAV.x[i]); x1 = Math.max(x1, NAV.x[i]); y0 = Math.min(y0, NAV.y[i]); y1 = Math.max(y1, NAV.y[i]);
+    zLo = Math.min(zLo, NAV.z[i]); zHi = Math.max(zHi, NAV.z[i]);
+  }
+  if (!NAV.n) return;
+  x0 -= 160; y0 -= 160; x1 += 160; y1 += 160;
+  const S = 1024 / Math.max(x1 - x0, y1 - y0), w = Math.ceil((x1 - x0) * S), h = Math.ceil((y1 - y0) * S);
+  const zt = zHi + 220, zb = zLo - 600;
+  const VP = new Float32Array([2 / (x1 - x0), 0, 0, 0, 0, 2 / (y1 - y0), 0, 0, 0, 0, -2 / (zt - zb), 0,
+    -(x1 + x0) / (x1 - x0), -(y1 + y0) / (y1 - y0), (zt + zb) / (zt - zb), 1]);
+  const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, w, h, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  const rb = gl.createRenderbuffer(); gl.bindRenderbuffer(gl.RENDERBUFFER, rb); gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, w, h);
+  const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, rb);
+  gl.viewport(0, 0, w, h); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.enable(gl.DEPTH_TEST); gl.depthMask(true); gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK); gl.frontFace(gl.CCW);
+  drawWorld(VP, false); drawProps(VP); drawWorld(VP, true);
+  const px = new Uint8Array(w * h * 4);
+  gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.deleteFramebuffer(fb); gl.deleteRenderbuffer(rb); gl.deleteTexture(tex);
+  // Nur begehbare Bereiche zeigen (Wegnetz, 2 Zellen erweitert); Daecher ohne Weg verschwinden
+  const occ = new Uint8Array(NAV.W * NAV.H);
+  for (let i = 0; i < NAV.n; i++) occ[NAV.ciy[i] * NAV.W + NAV.cix[i]] = 1;
+  const dil = new Uint8Array(NAV.W * NAV.H);
+  for (let iy = 0; iy < NAV.H; iy++) for (let ix = 0; ix < NAV.W; ix++) {
+    if (!occ[iy * NAV.W + ix]) continue;
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+      const X = ix + dx, Y = iy + dy; if (X >= 0 && Y >= 0 && X < NAV.W && Y < NAV.H) dil[Y * NAV.W + X] = 1; }
+  }
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const cx = cv.getContext('2d'), id = cx.createImageData(w, h), D = id.data;
+  for (let v = 0; v < h; v++) {
+    const src = (h - 1 - v) * w * 4, wy = y1 - (v + 0.5) / S, iy = Math.floor((wy - NAV.oy) / CELL);
+    for (let u = 0; u < w; u++) {
+      const wx = x0 + (u + 0.5) / S, ix = Math.floor((wx - NAV.ox) / CELL);
+      const inside = ix >= 0 && iy >= 0 && ix < NAV.W && iy < NAV.H && dil[iy * NAV.W + ix];
+      const o = v * w * 4 + u * 4, a = src + u * 4;
+      D[o] = px[a]; D[o + 1] = px[a + 1]; D[o + 2] = px[a + 2]; D[o + 3] = inside && px[a + 3] ? 255 : 0;
+    }
+  }
+  cx.putImageData(id, 0, 0);
+  RADAR.img = cv; RADAR.M = [S, 0, -x0 * S, 0, -S, y1 * S]; RADAR.src = 'render';
+}
+function drawRadar() {
+  if (!RADAR.img || !settings.radar) return;
+  const now = performance.now(); if (now - (RADAR.t || 0) < 30) return; RADAR.t = now;   // ~30 Hz reicht
+  const cv = RADAR.cv, x = RADAR.ctx, dpr = Math.min(devicePixelRatio || 1, 2);
+  const S = Math.round(cv.clientWidth * dpr); if (!S) return;
+  if (cv.width !== S) { cv.width = cv.height = S; }
+  const R = S / 2, k = R / RADAR.range, p = player.o, s = Math.sin(player.yaw), c = Math.cos(player.yaw);
+  // Welt -> Radar: Spieler in der Mitte, Blickrichtung oben. q = k * [[s, -c], [-c, -s]] * (X - P) + (R, R)
+  const q00 = k * s, q01 = -k * c, q10 = -k * c, q11 = -k * s;
+  const toR = (X, Y) => { const dx = X - p[0], dy = Y - p[1]; return [q00 * dx + q01 * dy + R, q10 * dx + q11 * dy + R]; };
+  x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, S, S);
+  x.save();
+  x.beginPath(); x.arc(R, R, R - 0.5, 0, Math.PI * 2); x.clip();
+  x.fillStyle = 'rgba(12, 14, 10, .62)'; x.fillRect(0, 0, S, S);
+  // Bild -> Welt -> Radar
+  const [a, b, c0, d, e, f] = RADAR.M, det = a * e - b * d;
+  const i00 = e / det, i01 = -b / det, i10 = -d / det, i11 = a / det;
+  const g00 = q00 * i00 + q01 * i10, g01 = q00 * i01 + q01 * i11, g10 = q10 * i00 + q11 * i10, g11 = q10 * i01 + q11 * i11;
+  const h0 = -(g00 * c0 + g01 * f) - (q00 * p[0] + q01 * p[1]) + R, h1 = -(g10 * c0 + g11 * f) - (q10 * p[0] + q11 * p[1]) + R;
+  x.globalAlpha = 0.9; x.imageSmoothingEnabled = true;
+  x.setTransform(g00, g10, g01, g11, h0, h1); x.drawImage(RADAR.img, 0, 0);
+  x.setTransform(1, 0, 0, 1, 0, 0); x.globalAlpha = 1;
+  // Blickfeld
+  x.fillStyle = 'rgba(255, 220, 140, .10)';
+  x.beginPath(); x.moveTo(R, R); x.arc(R, R, R, -Math.PI / 2 - 0.62, -Math.PI / 2 + 0.62); x.closePath(); x.fill();
+  // Kisten
+  const ds = Math.max(2, 2.2 * dpr);
+  for (const dr of drops) {
+    if (dr.kind !== 'chest') continue;
+    const [u, v] = toR(dr.x, dr.y); if ((u - R) ** 2 + (v - R) ** 2 > R * R) continue;
+    x.fillStyle = '#ffd34a'; x.fillRect(u - ds * 1.4, v - ds * 1.4, ds * 2.8, ds * 2.8);
+  }
+  // Gegner (heller = auf deiner Hoehe, dunkler = darueber/darunter)
+  const pz = p[2] - 36;
+  for (const en of enemies) {
+    if (en.state !== ALIVE) continue;
+    const [u, v] = toR(en.x, en.y); const rr = (u - R) ** 2 + (v - R) ** 2;
+    if (rr > (R - 2) * (R - 2)) continue;
+    const dz = Math.abs(en.z - pz) > 90;
+    if (en.boss) {
+      x.fillStyle = '#ff3b1f'; x.beginPath(); x.arc(u, v, ds * 2.6, 0, Math.PI * 2); x.fill();
+      x.strokeStyle = '#fff'; x.lineWidth = dpr; x.stroke();
+    } else {
+      x.fillStyle = en.elite ? (dz ? '#a8701c' : '#ffb43c') : (dz ? '#8c2a1e' : '#ff4a32');
+      const r = en.elite ? ds * 1.5 : ds; x.fillRect(u - r, v - r, r * 2, r * 2);
+    }
+  }
+  x.restore();
+  // Spieler
+  x.fillStyle = '#fff'; x.strokeStyle = 'rgba(0,0,0,.7)'; x.lineWidth = dpr;
+  x.beginPath(); x.moveTo(R, R - 5 * dpr); x.lineTo(R + 3.6 * dpr, R + 4 * dpr); x.lineTo(R, R + 2.2 * dpr); x.lineTo(R - 3.6 * dpr, R + 4 * dpr); x.closePath(); x.fill(); x.stroke();
 }
 
 // ---------------------------------------------------------------- Sprites (Geld, Pickups, Kisten, Granaten, C4)
@@ -2484,6 +2714,7 @@ function frame(now) {
     fpsAcc = 0; fpsN = 0;
   }
   updateHud(dt);
+  drawRadar();
 }
 
 function updateGame(dt) {
@@ -2651,6 +2882,11 @@ $('#restartBtn').addEventListener('click', () => { restartRound(); togglePause(f
     const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, c);
     gl.generateMipmap(gl.TEXTURE_2D); fallbackTex = { tex: t, w: 16, h: 16 }; }
   if (man.sky) for (const [k, r] of Object.entries(man.sky)) SKYTEX[k] = await loadTexture(part(r), 'image/jpeg', { repeat: false, mips: false });
+  if (man.props && man.props.models && Object.keys(man.props.models).length) {
+    const P = man.props, mesh = {};
+    for (const [k, r] of Object.entries(P.models)) { mesh[k] = { v: new Float32Array(part(r.verts)), idx: new Uint16Array(part(r.idx)), numVerts: r.numVerts }; PROP_MODELS.add(k); }
+    PROP_DATA = { mesh, masked: !!P.masked, tex: await loadTexture(part(P.atlas), P.atlasType, { repeat: false }) };
+  }
   await step(80, 'Baue Geometrie und Licht …');
   WORLD = buildWorld(BSP, TEX);
   SKY = buildSky(man.skyYaw || 0);
@@ -2677,6 +2913,10 @@ $('#restartBtn').addEventListener('click', () => { restartRound(); togglePause(f
   const tNav = performance.now();
   buildNav();
   const navMs = Math.round(performance.now() - tNav);
+  const snapped = snapSpots();
+  if (Object.keys(snapped).length) console.log('Spots verschoben:', JSON.stringify(snapped));
+  if (PROP_DATA) PROPS = buildProps(PROP_DATA);
+  await buildRadar(man, part);
   await step(100, `Bereit · ${WORLD.tris.toLocaleString('de-DE')} Dreiecke · Wegnetz ${NAV.n.toLocaleString('de-DE')} Knoten (${navMs} ms)`);
   const sb = $('#startBtn');
   sb.disabled = false;
@@ -2691,7 +2931,7 @@ $('#restartBtn').addEventListener('click', () => { restartRound(); togglePause(f
   requestAnimationFrame(t => { last = t; frame(t); });
   // Test-Schnittstelle (fuer automatische Tests)
   window.__cs = { player, input, teleport, trace, SPOTS, WORLD, BSP, NAV, game, get enemies() { return enemies; }, settings,
-    get drops() { return drops; }, addXp, addWeapon, refreshStats, openChest, get zones() { return zones; }, dbg: () => JSON.stringify({nades: nades.length, c4: c4s.length, shots: eShots.length, fx: fx.length}), start: () => sb.click(), setLight: v => LIGHT.splice(0, 3, ...v) };
+    get drops() { return drops; }, addXp, addWeapon, refreshStats, openChest, get zones() { return zones; }, dbg: () => JSON.stringify({nades: nades.length, c4: c4s.length, shots: eShots.length, fx: fx.length}), start: () => sb.click(), get PROPS() { return PROPS; }, RADAR, drawRadar, setLight: v => LIGHT.splice(0, 3, ...v) };
 })();
 </script>
 </body>

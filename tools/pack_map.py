@@ -142,6 +142,8 @@ def main():
     ap.add_argument("out"); ap.add_argument("bsp")
     ap.add_argument("--wad", action="append", default=[])
     ap.add_argument("--sky-dust", help="Ordner mit img1..img6.jpg (de_dust, per Kantenabgleich zugeordnet)")
+    ap.add_argument("--props", help="Ordner mit Deko-Modellen (.mdl) fuer cycler_sprite/env_model")
+    ap.add_argument("--overview", help="Uebersichtskarte (CS-Overview mit gruenem Hintergrund) fuer das Radar")
     args = ap.parse_args()
     bsp = open(args.bsp, "rb").read()
     out = args.out
@@ -180,6 +182,18 @@ def main():
         total += len(data)
         print(f"  {name:20s} {w}x{h} {len(data) // 1024:4d} KB {src}")
     print(f"Texturen: {len(man['textures'])} Stueck, {total // 1024} KB")
+    if args.props:
+        import os
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from props import pack_props
+        man["props"] = pack_props(bsp, args.props, add, jpg, png)
+    if args.overview:
+        import os
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from overview import calibrate
+        data, M, size, score = calibrate(bsp, args.overview, out_w=1024)
+        man["overview"] = {"data": add(data), "type": "image/webp", "M": [round(x, 6) for x in M], "size": list(size)}
+        print(f"Uebersichtskarte: {size[0]}x{size[1]}, {len(data) // 1024} KB, Passung {score:.3f}, M={[round(x, 4) for x in M]}")
 
     # Himmel: Zuordnung per Kantenabgleich ermittelt (siehe skymatch.py):
     # Zyklus nach rechts img2 -> img6 -> img5 -> img3; Oberkanten passen zum Up-Bild (img4).
