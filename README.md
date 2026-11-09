@@ -11,6 +11,7 @@ Ego-Shooter im Stil von Counter-Strike 1.6, der sich wie Vampire Survivors spiel
 
 | Version | Phase | Inhalt |
 | --- | --- | --- |
+| v0.11 | Mehrspieler | Optionaler Koop im selben WLAN: Raum erstellen → 4-stelliger Code → Mitspieler treten bei (Vermittlung über PeerJS, danach direkt per WebRTC). Host rechnet die Gegner, jeder hat eigenes Geld, Level, Waffen und Beute; Gegner jagen den nächsten Spieler, mehr Spieler = mehr Gegner; Mitspieler als GIGN mit Namen, im Radar hellblau, ihre Türme/Roombas sichtbar; Explosionen der anderen sichtbar; Gefallene schauen zu bis Rundenende; Gast mit anderer Map lädt automatisch die Map des Hosts |
 | v0.10.2 | Fix | Killfeed blieb in der zweiten Runde leer (Drossel-Zeit wurde beim Neustart nicht zurückgesetzt) |
 | v0.10.1 | Ducken | Ducken wie in CS (halb so hoch, ein Drittel Tempo, Aufstehen nur mit Platz über dem Kopf): Touch-Knopf DUCKEN (an/aus) über SPRUNG, PC Strg oder C; Turm-Knopf rückt nach oben |
 | v0.10 | Waffenhändler | Geld der Runde wandert aufs Konto (bleibt im Browser gespeichert); Waffenhändler im Hauptmenü mit dauerhaften Upgrades (Leben, Schaden, Geschäftssinn, Sammelradius, Kondition, viertes Angebot, zweites Leben) und freischaltbaren Startwaffen; „Hauptmenü“ im Pause- und Endbildschirm; Schwimmen (auch in func_water): Blickrichtung schwimmen, Springen = hoch und an der Kante raus, Unterwasser-Tönung |
@@ -32,6 +33,15 @@ Ego-Shooter im Stil von Counter-Strike 1.6, der sich wie Vampire Survivors spiel
 | – | Modelltest | 11 Spielermodelle mit GPU-Skinning und Instancing, 14 Animationen, bis 600 Gegner |
 
 Als Nächstes: Rest von **Phase 4 · CS-Seele** (Bomben-Event auf A/B, Killfeed, Titel, Teamwahl) und weitere Maps, sobald die Dateien da sind.
+
+## Mehrspieler (optional)
+
+Hauptmenü → **MEHRSPIELER** → Name eingeben → **RAUM ERSTELLEN**. Der Host bekommt einen 4-stelligen Code, die anderen geben ihn ein und tippen **BEITRETEN**. Der Host startet die Runde für alle.
+
+- Verbindungsaufbau über den kostenlosen PeerJS-Vermittlungsdienst, danach laufen die Daten direkt zwischen den Geräten (WebRTC).
+- Der Host berechnet Gegner, Wellen und Bosse; jeder Spieler berechnet seine Waffen, sein Geld, Level und seine Beute selbst.
+- Dateien: `peerjs.min.js` (PeerJS 1.5.5, MIT-Lizenz, siehe `peerjs.LICENSE`) und `models_ct.bin` (GIGN-Modell für Mitspieler) werden nur im Mehrspieler nachgeladen.
+- Zum Testen ohne Internet: eigener PeerJS-Server und `?peer=host:port` an die Adresse hängen.
 
 ## Maps
 
