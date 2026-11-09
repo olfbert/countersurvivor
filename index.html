@@ -189,7 +189,7 @@
 <div class="overlay show" id="start">
   <div class="box">
     <h1>COUNTER-SURVIVORS</h1>
-    <p class="muted">Roomba &amp; neue Maps · v0.9.3</p>
+    <p class="muted">Roomba &amp; neue Maps · v0.9.4</p>
     <div class="maps" id="mapPick"></div>
     <div class="barwrap"><div class="barfill" id="loadbar"></div></div>
     <p class="muted" id="loadtxt">Lade Map …</p>
@@ -219,7 +219,7 @@
 <div class="overlay" id="menu">
   <div class="box">
     <h1>PAUSE</h1>
-    <p class="muted">Counter-Survivors · v0.9.3</p>
+    <p class="muted">Counter-Survivors · v0.9.4</p>
     <h2>Teleport</h2>
     <div class="grid" id="tpGrid"></div>
     <h2>Einstellungen</h2>
@@ -259,7 +259,7 @@
 // BSP v30 wird zur Laufzeit gelesen: Geometrie, Lightmaps, Kollision, Entities.
 // Koordinaten wie in GoldSrc: Z zeigt nach oben, 1 Einheit ~ 1 Zoll.
 // =====================================================================
-const VERSION = '0.9.3';
+const VERSION = '0.9.4';
 const $ = s => document.querySelector(s);
 const err = msg => { $('#start').classList.add('show'); $('#err').textContent += msg + '\n'; };
 addEventListener('error', e => err('Fehler: ' + e.message + (e.lineno ? ' (Zeile ' + e.lineno + ')' : '')));
@@ -525,7 +525,7 @@ function buildWorld(bsp, textures) {
   const LM_W = 2048;
   // 1) Welche Modelle werden gezeichnet, mit welchen Render-Einstellungen?
   const drawModels = [{ model: 0, origin: [0, 0, 0], mode: 0, amt: 255 }];
-  for (const e of bsp.entities) {
+  for (const [ei, e] of bsp.entities.entries()) {
     if (!e.model || e.model[0] !== '*') continue;
     const cls = e.classname || '';
     if (HIDDEN_CLASSES.has(cls) || cls.startsWith('trigger_') || cls === 'func_door_rotating') continue;
@@ -539,7 +539,7 @@ function buildWorld(bsp, textures) {
       if (!prop) continue;
       mode = 0; amt = 255;
     }
-    drawModels.push({ model: +e.model.slice(1), origin: entOrigin(e, bsp.models[+e.model.slice(1)]), mode, amt });
+    drawModels.push({ model: +e.model.slice(1), origin: entOrigin(e, bsp.models[+e.model.slice(1)]), mode, amt, ent: cls === 'func_breakable' ? ei : undefined });
   }
   // 2) Flaechen sammeln, Lightmap-Groessen bestimmen
   const faces = [];
@@ -561,7 +561,7 @@ function buildWorld(bsp, textures) {
       // Maskiert: Texturname mit "{" oder Rendermode "solid"; durchsichtig: Rendermode texture/additive
       const masked = mt.name[0] === '{' || dm.mode === 4;
       const trans = (dm.mode === 2 || dm.mode === 3 || dm.mode === 5) && dm.amt < 255;
-      faces.push({ f, vs, st, mt, bminS, bminT, lw, lh, hasLM, masked, trans, additive: dm.mode === 5, amt: dm.amt, ax: 0, ay: 0 });
+      faces.push({ f, vs, st, mt, bminS, bminT, lw, lh, hasLM, masked, trans, additive: dm.mode === 5, amt: dm.amt, ax: 0, ay: 0, ent: dm.ent });
     }
   }
   // 3) Lightmaps packen (Regal-Verfahren, 1 Texel Rand je Seite gegen Ausbluten)
@@ -595,8 +595,8 @@ function buildWorld(bsp, textures) {
   const groups = new Map();
   let tris = 0;
   for (const F of faces) {
-    const key = (F.trans ? 't' : F.masked ? 'm' : 'o') + '|' + F.mt.name + '|' + (F.trans ? F.amt + (F.additive ? 'a' : '') : '');
-    if (!groups.has(key)) groups.set(key, { kind: F.trans ? 'trans' : F.masked ? 'masked' : 'opaque', name: F.mt.name, amt: F.amt, additive: F.additive, data: [] });
+    const key = (F.trans ? 't' : F.masked ? 'm' : 'o') + '|' + F.mt.name + '|' + (F.trans ? F.amt + (F.additive ? 'a' : '') : '') + (F.ent !== undefined ? '|b' + F.ent : '');
+    if (!groups.has(key)) groups.set(key, { kind: F.trans ? 'trans' : F.masked ? 'masked' : 'opaque', name: F.mt.name, amt: F.amt, additive: F.additive, ent: F.ent, data: [] });
     const g = groups.get(key);
     const T = textures[F.mt.name];
     const tw = T ? T.w : F.mt.w || 64, th = T ? T.h : F.mt.h || 64;
@@ -1625,6 +1625,11 @@ function hurtPlayer(dmg) {
 function explode(pos, radius, enemyDmg, playerDmg, w, snd = 'explode') {
   fx.push({ type: 'boom', p: pos, r: radius, t: 0, life: 0.7 });
   sfx(snd, { pos, vol: snd === 'c4_explode' ? 1 : 0.85, gap: 0.06, far: 3500, important: true });
+  for (const b of BREAKABLES) {
+    if (b.dead) continue;
+    const dx = Math.max(b.mins[0] - pos[0], 0, pos[0] - b.maxs[0]), dy = Math.max(b.mins[1] - pos[1], 0, pos[1] - b.maxs[1]), dz = Math.max(b.mins[2] - pos[2], 0, pos[2] - b.maxs[2]);
+    if (Math.hypot(dx, dy, dz) < radius) damageBreakable(b, Math.max(enemyDmg, 60), null);
+  }
   for (const e of enemies) {
     if (e.state !== ALIVE) continue;
     const d = Math.hypot(e.x - pos[0], e.y - pos[1], e.z + 36 - pos[2]);
@@ -2353,6 +2358,7 @@ function drawWorld(VP, translucent) {
   let state = '';
   for (const g of WORLD.groups) {
     if ((g.kind === 'trans') !== translucent) continue;
+    if (g.ent !== undefined && BROKEN.has(g.ent)) continue;
     if (g.kind !== state) {
       state = g.kind;
       if (state === 'masked') gl.disable(gl.CULL_FACE);
@@ -3022,6 +3028,86 @@ function killfeed(e, w, head) {
   setTimeout(() => row.remove(), 5000);
 }
 
+// ---------------------------------------------------------------- Zerstoerbares (func_breakable): Lueftungsgitter, Glas, Kisten ...
+let BREAKABLES = [];
+const BROKEN = new Set();
+// material: 0 Glas, 1 Holz, 2 Metall, 3 Fleisch, 4 Beton, 5 Fliesen, 6 Computer, 7 unzerbrechliches Glas, 8 Stein
+const MAT_COL = { 0: [.7, .85, .95], 1: [.42, .28, .14], 2: [.42, .44, .47], 3: [.4, .05, .05], 4: [.55, .52, .47], 5: [.85, .85, .8], 6: [.3, .32, .3], 7: [.4, .42, .44], 8: [.5, .46, .4] };
+function initBreakables() {
+  BREAKABLES = []; BROKEN.clear();
+  BSP.entities.forEach((e, idx) => {
+    if (e.classname !== 'func_breakable' || !e.model || e.model[0] !== '*') return;
+    const sf = +(e.spawnflags || 0), mat = +(e.material || 0);
+    if (sf & 1) return;   // nur per Ausloeser zerstoerbar (Material 7 "unzerbrechlich" geht in CS-Maps oft als Gitter kaputt, also zulassen)
+    const m = BSP.models[+e.model.slice(1)], o = entOrigin(e, m);
+    BREAKABLES.push({ idx, e, m, o, hp: Math.max(1, +(e.health || 0) || 1), mat, dead: false,
+      mins: [m.mins[0] + o[0], m.mins[1] + o[1], m.mins[2] + o[2]], maxs: [m.maxs[0] + o[0], m.maxs[1] + o[1], m.maxs[2] + o[2]] });
+  });
+}
+function resetBreakables() {
+  if (!BREAKABLES.length) return;
+  BROKEN.clear();
+  for (const b of BREAKABLES) { b.dead = false; b.hp = Math.max(1, +(b.e.health || 0) || 1); if (!SOLIDS.some(s => s.e === b.e)) SOLIDS.push({ model: b.m, origin: b.o, cls: b.e.classname, e: b.e }); }
+}
+// naechstes zerstoerbares Teil auf der Linie (nur wenn nichts anderes davor liegt)
+function breakableOnLine(a, b) {
+  const wf = trace(a, b, 0).fraction;
+  let best = null, bf = 1;
+  for (const B of BREAKABLES) {
+    if (B.dead) continue;
+    const tr = traceModel(B.m, B.o, 0, a, b);
+    if (tr.fraction < bf && tr.fraction <= wf + 0.002) { bf = tr.fraction; best = B; }
+  }
+  return best ? { b: best, f: bf, p: [a[0] + (b[0] - a[0]) * bf, a[1] + (b[1] - a[1]) * bf, a[2] + (b[2] - a[2]) * bf] } : null;
+}
+function debris(b, p, n) {
+  const c = MAT_COL[b.mat] || MAT_COL[2];
+  for (let k = 0; k < n; k++) fx.push({ type: 'debris', p: p || [b.mins[0] + Math.random() * (b.maxs[0] - b.mins[0]), b.mins[1] + Math.random() * (b.maxs[1] - b.mins[1]), b.mins[2] + Math.random() * (b.maxs[2] - b.mins[2])],
+    v: [(Math.random() - .5) * 220, (Math.random() - .5) * 220, 40 + Math.random() * 160], t: 0, life: .7 + Math.random() * .5, s: (b.mat === 0 ? 0.8 : 1.4) + Math.random() * 1.6, c });
+}
+function damageBreakable(b, dmg, p) {
+  if (b.dead) return;
+  b.hp -= dmg;
+  debris(b, p, 3);
+  if (b.hp > 0) { sfx(b.mat === 0 ? 'tick' : 'bhit_helmet', { pos: p, vol: 0.35, pitch: b.mat === 0 ? 1.6 : 0.8, gap: 0.05 }); return; }
+  b.dead = true; BROKEN.add(b.idx);
+  SOLIDS = SOLIDS.filter(s => s.e !== b.e);
+  const c = [(b.mins[0] + b.maxs[0]) / 2, (b.mins[1] + b.maxs[1]) / 2, (b.mins[2] + b.maxs[2]) / 2];
+  const vol = (b.maxs[0] - b.mins[0]) * (b.maxs[1] - b.mins[1]) * (b.maxs[2] - b.mins[2]);
+  debris(b, null, Math.min(40, 10 + Math.round(vol / 6000)));
+  if (b.mat === 0) { sfx('flashbang', { pos: c, vol: 0.5, pitch: 2.2, important: true }); sfx('tick', { pos: c, vol: 0.6, pitch: 1.8, delay: 0.05 }); }
+  else if (b.mat === 1) sfx('he_bounce', { pos: c, vol: 0.9, pitch: 0.55, important: true });
+  else sfx('bhit_helmet', { pos: c, vol: 0.9, pitch: 0.6, important: true });
+}
+// spawnflags 2 = zerbricht bei Beruehrung, 4 = bei Druck (draufstehen)
+function touchBreakables() {
+  const o = player.o;
+  for (const b of BREAKABLES) {
+    if (b.dead || !(+(b.e.spawnflags || 0) & 6)) continue;
+    if (o[0] + 18 > b.mins[0] && o[0] - 18 < b.maxs[0] && o[1] + 18 > b.mins[1] && o[1] - 18 < b.maxs[1] && o[2] - 38 < b.maxs[2] && o[2] + 38 > b.mins[2])
+      damageBreakable(b, 1e6, [o[0], o[1], o[2] - 36]);
+  }
+}
+// Spieler schaut auf ein zerstoerbares Teil und keine Waffe hat gerade einen Gegner: darauf schiessen
+function shootBreakables() {
+  if (!BREAKABLES.length || game.over) return;
+  const eye = eyePos(), cp = Math.cos(player.pitch);
+  const end = [eye[0] + Math.cos(player.yaw) * cp * 900, eye[1] + Math.sin(player.yaw) * cp * 900, eye[2] + Math.sin(player.pitch) * 900];
+  const hit = breakableOnLine(eye, end);
+  if (!hit) return;
+  for (const w of game.weapons) {
+    const kind = WDEF[w.id] && WDEF[w.id].kind;
+    if (!['single', 'spray', 'burst', 'shotgun', 'sides'].includes(kind) || w.cd > 0 || w.reload > 0) continue;
+    const S = w.st;
+    w.cd = S.int;
+    weaponSound(w);
+    fx.push({ type: 'tracer', a: gunPos(), b: hit.p, t: 0, life: 0.06 });
+    damageBreakable(hit.b, S.dmg * (S.pellets || 1), hit.p);
+    if (!S.noReload) { w.mag--; if (w.mag <= 0) { w.reload = S.reload; reloadSound(w, true); } }
+    if (hit.b.dead) break;
+  }
+}
+
 // ---------------------------------------------------------------- Sprites (Geld, Pickups, Kisten, Granaten, C4)
 const progSprite = program(`#version 300 es
 precision highp float;
@@ -3209,6 +3295,9 @@ function drawFx(VP, eye, yaw) {
     } else if (f.type === 'flashfx') {
       const t = f.t / f.life;
       ball(f.p[0], f.p[1], f.p[2] + (f.soft ? 10 : 40), f.r * (f.soft ? 0.9 : 0.6) * Math.sqrt(t), [1, 1, 1, (f.soft ? 0.35 : 0.9) * (1 - t)]);
+    } else if (f.type === 'debris') {
+      const t = f.t, z = Math.max(f.p[2] + f.v[2] * t - 520 * t * t, f.p[2] - 200);
+      ball(f.p[0] + f.v[0] * t, f.p[1] + f.v[1] * t, z, f.s, [f.c[0], f.c[1], f.c[2], (f.c === MAT_COL[0] ? .6 : .95) * k]);
     } else if (f.type === 'blood') {
       const t = f.t, s = f.s * (1 + t * 1.5);
       ball(f.p[0] + f.v[0] * t, f.p[1] + f.v[1] * t, f.p[2] + f.v[2] * t - 320 * t * t, s, [.38, .01, .01, .85 * k]);
@@ -3327,6 +3416,7 @@ function updateGame(dt) {
   updateAmbientSounds(dt);
   updateEnemies(dt);
   updateWeapons(dt);
+  shootBreakables(); touchBreakables();
   updateTurrets(dt);
   updateRoombas(dt);
   updateShots(dt);
@@ -3445,7 +3535,7 @@ function endRound(won) {
   }, won ? 1800 : 1300);
 }
 function restartRound() {
-  enemies = []; drops = []; eShots = []; nades = []; c4s = []; fx = []; zones = []; delayed = []; turrets = []; roombas = []; $('#killfeed').innerHTML = '';
+  enemies = []; drops = []; eShots = []; nades = []; c4s = []; fx = []; zones = []; delayed = []; turrets = []; roombas = []; resetBreakables(); $('#killfeed').innerHTML = '';
   Object.assign(game, { hp: 100, maxHp: 100, kills: 0, time: 0, over: false, won: false, spawnAcc: 0, flowT: 0, hurt: 0, deathT: 0,
     xp: 0, xpNext: xpNeed(1), level: 1, money: 0, pending: 0, weapons: [], passives: {}, bossIdx: 0, boss: null, shake: 0 });
   addWeapon('usp'); addWeapon('knife');
@@ -3498,7 +3588,8 @@ $('#restartBtn').addEventListener('click', () => { restartRound(); togglePause(f
   if (!man.sky) SKYTEX = fallbackSky();
   // feste Brush-Entities fuer die Kollision
   SOLIDS = BSP.entities.filter(isSolidEnt)
-    .map(e => ({ model: BSP.models[+e.model.slice(1)], origin: entOrigin(e, BSP.models[+e.model.slice(1)]), cls: e.classname }));
+    .map(e => ({ model: BSP.models[+e.model.slice(1)], origin: entOrigin(e, BSP.models[+e.model.slice(1)]), cls: e.classname, e }));
+  initBreakables();
   LADDERS = BSP.entities.filter(e => e.classname === 'func_ladder' && e.model && e.model[0] === '*').map(e => {
     const m = BSP.models[+e.model.slice(1)], o = vec3(e.origin || '0 0 0');
     return { mins: [m.mins[0] + o[0], m.mins[1] + o[1], m.mins[2] + o[2]], maxs: [m.maxs[0] + o[0], m.maxs[1] + o[1], m.maxs[2] + o[2]] };
@@ -3544,7 +3635,7 @@ $('#restartBtn').addEventListener('click', () => { restartRound(); togglePause(f
   requestAnimationFrame(t => { last = t; frame(t); });
   // Test-Schnittstelle (fuer automatische Tests)
   window.__cs = { player, input, teleport, trace, SPOTS, WORLD, BSP, NAV, game, get enemies() { return enemies; }, settings,
-    get drops() { return drops; }, addXp, addWeapon, refreshStats, openChest, get zones() { return zones; }, dbg: () => JSON.stringify({nades: nades.length, c4: c4s.length, shots: eShots.length, fx: fx.length}), start: () => sb.click(), get PROPS() { return PROPS; }, RADAR, drawRadar, SND, sfx, get turrets() { return turrets; }, placeTurret, flowFrom, get roombas() { return roombas; }, get LADDERS() { return LADDERS; }, get drops() { return drops; },  setLight: v => LIGHT.splice(0, 3, ...v) };
+    get drops() { return drops; }, addXp, addWeapon, refreshStats, openChest, get zones() { return zones; }, dbg: () => JSON.stringify({nades: nades.length, c4: c4s.length, shots: eShots.length, fx: fx.length}), start: () => sb.click(), get PROPS() { return PROPS; }, RADAR, drawRadar, SND, sfx, get turrets() { return turrets; }, placeTurret, flowFrom, get roombas() { return roombas; }, get LADDERS() { return LADDERS; }, get BREAKABLES() { return BREAKABLES; }, get drops() { return drops; },  setLight: v => LIGHT.splice(0, 3, ...v) };
 })();
 </script>
 </body>
