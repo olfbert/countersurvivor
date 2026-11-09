@@ -11,6 +11,7 @@ Ego-Shooter im Stil von Counter-Strike 1.6, der sich wie Vampire Survivors spiel
 
 | Version | Phase | Inhalt |
 | --- | --- | --- |
+| v0.10.1 | Ducken | Ducken wie in CS (halb so hoch, ein Drittel Tempo, Aufstehen nur mit Platz über dem Kopf): Touch-Knopf DUCKEN (an/aus) über SPRUNG, PC Strg oder C; Turm-Knopf rückt nach oben |
 | v0.10 | Waffenhändler | Geld der Runde wandert aufs Konto (bleibt im Browser gespeichert); Waffenhändler im Hauptmenü mit dauerhaften Upgrades (Leben, Schaden, Geschäftssinn, Sammelradius, Kondition, viertes Angebot, zweites Leben) und freischaltbaren Startwaffen; „Hauptmenü“ im Pause- und Endbildschirm; Schwimmen (auch in func_water): Blickrichtung schwimmen, Springen = hoch und an der Kante raus, Unterwasser-Tönung |
 | v0.9.5 | Neue Evolutionen | Geschützturm + Nachtsicht = **Aperture-Abwehr** (schwenkt ±90°, erfasst sofort, doppelter Schaden); Roomba + Defuse-Kit = **Kampf-Roomba** (zieht Geld aus 170 Einheiten an, 40 % schneller, verletzt Gegner beim Überfahren) |
 | v0.9.4 | Zerstörbares | func_breakable geht kaputt: anschauen = draufschießen (wenn gerade kein Gegner im Visier ist), Explosionen zerstören mit; Splitter je nach Material (Glas, Holz, Metall, Computer …); Teile mit „bei Berührung/Draufstehen“ zerbrechen beim Anfassen; kommen zur nächsten Runde wieder |

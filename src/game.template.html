@@ -55,9 +55,13 @@
   #jumpBtn { position: absolute; right: max(26px, calc(env(safe-area-inset-right) + 16px)); bottom: max(26px, calc(env(safe-area-inset-bottom) + 16px));
     width: 76px; height: 76px; border-radius: 50%; font-size: 13px; letter-spacing: .05em; background: rgba(28, 31, 23, .55); display: none; }
   .touch #jumpBtn { display: block; }
-  #turretBtn { position: absolute; right: max(30px, calc(env(safe-area-inset-right) + 20px)); bottom: max(112px, calc(env(safe-area-inset-bottom) + 102px));
+  #turretBtn { position: absolute; right: max(30px, calc(env(safe-area-inset-right) + 20px)); bottom: max(186px, calc(env(safe-area-inset-bottom) + 176px));
     width: 68px; height: 68px; border-radius: 50%; font-size: 11px; line-height: 1.15; letter-spacing: .04em; background: rgba(28, 31, 23, .55); display: none; padding: 0; }
   #turretBtn.show { display: block; }
+  #duckBtn { position: absolute; right: max(33px, calc(env(safe-area-inset-right) + 23px)); bottom: max(112px, calc(env(safe-area-inset-bottom) + 102px));
+    width: 62px; height: 62px; border-radius: 50%; font-size: 10.5px; letter-spacing: .03em; background: rgba(28, 31, 23, .55); display: none; padding: 0; }
+  .touch #duckBtn { display: block; }
+  #duckBtn.on { background: rgba(255, 180, 60, .55); color: #1c1f17; }
   #turretBtn.cool { opacity: .5; }
   #turretBtn b { display: block; font-size: 15px; }
   .touch #money { bottom: max(46px, calc(env(safe-area-inset-bottom) + 38px)); }
@@ -194,6 +198,7 @@
   <div id="ammo"></div>
   <div id="hs">HEADSHOT</div>
   <button id="jumpBtn">SPRUNG</button>
+  <button id="duckBtn">DUCKEN</button>
   <button id="turretBtn"><b>TURM</b><span id="turretInfo"></span></button>
   <div id="toast"></div>
   <div id="portrait">Bitte das iPhone quer halten</div>
@@ -805,12 +810,20 @@ function trace(start, end, hull = 1) {
 const MOVE = { gravity: 800, friction: 4, stopspeed: 75, accelerate: 5, airaccelerate: 10, maxspeed: 250, step: 18,
   jump: Math.sqrt(2 * 800 * 45), maxvel: 2000, view: 17 };
 const player = { o: [0, 0, 0], v: [0, 0, 0], yaw: 0, pitch: 0, onGround: false, stepSmooth: 0, jumpQueued: false, jumpHeld: false };
-const input = { fwd: 0, side: 0 };
+const input = { fwd: 0, side: 0, duck: false };
+let duckToggle = false;
 
+// Spielerhuelle: stehend Hull 1 (72 hoch), geduckt Hull 3 (36 hoch). p.o bleibt "Fuesse + 36", geduckt wird um 18 versetzt getestet
+function ptrace(a, b) {
+  if (!player.ducked) return trace(a, b, 1);
+  const tr = trace([a[0], a[1], a[2] - 18], [b[0], b[1], b[2] - 18], 3);
+  tr.endpos = [tr.endpos[0], tr.endpos[1], tr.endpos[2] + 18];
+  return tr;
+}
 function categorize() {
   const p = player;
   if (p.v[2] > 180) { p.onGround = false; return; }
-  const tr = trace(p.o, [p.o[0], p.o[1], p.o[2] - 2]);
+  const tr = ptrace(p.o, [p.o[0], p.o[1], p.o[2] - 2]);
   if (tr.fraction < 1 && tr.normal[2] >= 0.7) {
     p.onGround = true;
     if (!tr.startsolid && !tr.allsolid) p.o = tr.endpos;
@@ -831,7 +844,7 @@ function flyMove(dt) {
   for (let bump = 0; bump < 4; bump++) {
     if (!p.v[0] && !p.v[1] && !p.v[2]) break;
     const end = [p.o[0] + timeLeft * p.v[0], p.o[1] + timeLeft * p.v[1], p.o[2] + timeLeft * p.v[2]];
-    const tr = trace(p.o, end);
+    const tr = ptrace(p.o, end);
     if (tr.allsolid) { p.v = [0, 0, 0]; return; }
     if (tr.fraction > 0) { p.o = tr.endpos; original = p.v.slice(); planes.length = 0; }
     if (tr.fraction === 1) break;
@@ -861,7 +874,7 @@ function walkMove(dt) {
   p.v[2] = 0;
   if (Math.hypot(p.v[0], p.v[1]) < 1) { p.v[0] = p.v[1] = 0; return; }
   const dest = [p.o[0] + p.v[0] * dt, p.o[1] + p.v[1] * dt, p.o[2]];
-  let tr = trace(p.o, dest);
+  let tr = ptrace(p.o, dest);
   if (tr.fraction === 1) { p.o = tr.endpos; return; }
   const original = p.o.slice(), originalVel = p.v.slice();
   // 1) einfach gleiten
@@ -869,10 +882,10 @@ function walkMove(dt) {
   const down = p.o.slice(), downVel = p.v.slice();
   // 2) Stufe hoch, gleiten, wieder runter
   p.o = original.slice(); p.v = originalVel.slice();
-  tr = trace(p.o, [p.o[0], p.o[1], p.o[2] + MOVE.step]);
+  tr = ptrace(p.o, [p.o[0], p.o[1], p.o[2] + MOVE.step]);
   if (!tr.startsolid && !tr.allsolid) p.o = tr.endpos;
   flyMove(dt);
-  tr = trace(p.o, [p.o[0], p.o[1], p.o[2] - MOVE.step]);
+  tr = ptrace(p.o, [p.o[0], p.o[1], p.o[2] - MOVE.step]);
   if (tr.normal[2] < 0.7) { p.o = down; p.v = downVel; return; }
   if (!tr.startsolid && !tr.allsolid) p.o = tr.endpos;
   const up = p.o;
@@ -933,6 +946,12 @@ function ladderNormal(L) {
 }
 function playerMove(dt) {
   const p = player;
+  // Ducken (wie CS: langsamer, Kopf 18 tiefer; Aufstehen nur, wenn ueber dem Kopf Platz ist)
+  readDuck();
+  if (input.duck && !p.ducked) p.ducked = true;
+  else if (!input.duck && p.ducked && !trace(p.o, p.o, 1).startsolid) p.ducked = false;
+  const vt = p.ducked ? -6 : MOVE.view;
+  p.viewZ = p.viewZ === undefined ? vt : p.viewZ + (vt - p.viewZ) * Math.min(1, dt * 14);
   categorize();
   // Springen (wie CS: neu druecken, ausser Auto-Bhop ist an)
   const wantJump = p.jumpQueued || (settings.autoBhop && p.jumpHeld);
@@ -990,7 +1009,7 @@ function playerMove(dt) {
   let wx = cy * input.fwd + sy * input.side, wy = sy * input.fwd - cy * input.side;
   let ws = Math.hypot(wx, wy);
   const wishdir = ws > 0 ? [wx / ws, wy / ws, 0] : [0, 0, 0];
-  ws = Math.min(ws, 1) * MOVE.maxspeed;
+  ws = Math.min(ws, 1) * MOVE.maxspeed * (p.ducked && p.onGround ? 0.34 : 1);
   if (p.onGround) { accelerate(wishdir, ws, MOVE.accelerate, dt, false); walkMove(dt); }
   else { accelerate(wishdir, ws, MOVE.airaccelerate, dt, true); flyMove(dt); }
   for (let i = 0; i < 3; i++) p.v[i] = Math.max(-MOVE.maxvel, Math.min(MOVE.maxvel, p.v[i]));
@@ -1950,7 +1969,7 @@ function openChest(count) {
 
 // ---------------------------------------------------------------- Zielerfassung (einmal pro Frame)
 let frameNo = 0, tgtFrame = -1, tgtList = [];
-function eyePos() { const p = player; return [p.o[0], p.o[1], p.o[2] + MOVE.view + p.stepSmooth]; }
+function eyePos() { const p = player; return [p.o[0], p.o[1], p.o[2] + (p.viewZ === undefined ? MOVE.view : p.viewZ) + p.stepSmooth]; }
 function gunPos() {
   const p = player, e = eyePos(), cp = Math.cos(p.pitch);
   const f = [Math.cos(p.yaw) * cp, Math.sin(p.yaw) * cp, Math.sin(p.pitch)], r = [Math.sin(p.yaw), -Math.cos(p.yaw), 0];
@@ -2295,6 +2314,7 @@ const jumpBtn = $('#jumpBtn');
 $('#turretBtn').addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); placeTurret(); });
 $('#turretGive').addEventListener('click', () => { if (!game.weapons.some(w => w.id === 'turret')) { addWeapon('turret'); refreshStats(); } togglePause(false); toast('Geschützturm: Knopf TURM oder Taste T'); });
 $('#roombaGive').addEventListener('click', () => { if (!game.weapons.some(w => w.id === 'roomba')) { addWeapon('roomba'); refreshStats(); } togglePause(false); });
+$('#duckBtn').addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); duckToggle = !duckToggle; $('#duckBtn').classList.toggle('on', duckToggle); });
 jumpBtn.addEventListener('pointerdown', e => { e.preventDefault(); player.jumpQueued = true; player.jumpHeld = true; });
 const jumpUp = () => { player.jumpHeld = false; };
 jumpBtn.addEventListener('pointerup', jumpUp); jumpBtn.addEventListener('pointercancel', jumpUp); jumpBtn.addEventListener('pointerleave', jumpUp);
@@ -2308,6 +2328,7 @@ function readKeys() {
   const walk = keys.has('ShiftLeft') || keys.has('ShiftRight') ? 0.52 : 1;
   input.fwd = f * walk; input.side = s * walk;
 }
+function readDuck() { input.duck = duckToggle || keys.has('ControlLeft') || keys.has('ControlRight') || keys.has('KeyC'); }
 
 // =====================================================================
 // UI
@@ -2324,8 +2345,8 @@ document.querySelectorAll('#mapPick button').forEach(b => b.addEventListener('cl
   settings.map = b.dataset.map; saveSettings();
   location.search = '?map=' + b.dataset.map;
 }));
-const CTRL_TOUCH = 'Linker Daumen: laufen · rechter Daumen: umschauen · Knopf rechts unten: springen · Schießen geht von selbst';
-const CTRL_PC = 'WASD: laufen · Maus: umschauen (Klick fängt die Maus) · Leertaste: springen · Shift: gehen · Esc: Pause · Schießen geht von selbst';
+const CTRL_TOUCH = 'Linker Daumen: laufen · rechter Daumen: umschauen · Knopf rechts unten: springen · DUCKEN an/aus · Schießen geht von selbst';
+const CTRL_PC = 'WASD: laufen · Maus: umschauen (Klick fängt die Maus) · Leertaste: springen · Strg/C: ducken · Shift: gehen · T: Turm · Esc: Pause · Schießen geht von selbst';
 $('#ctrlHint').textContent = IS_TOUCH ? CTRL_TOUCH : CTRL_PC;
 $('#ctrlHint2').textContent = IS_TOUCH ? CTRL_TOUCH : CTRL_PC;
 
@@ -3711,6 +3732,7 @@ function restartRound() {
   $('#dead').classList.remove('show'); $('#buy').classList.remove('show'); buyOpen = false;
   hudCache = ''; barCache = '';
   game.stepT = 0; game.hosT = 6;
+  duckToggle = false; player.ducked = false; $('#duckBtn').classList.remove('on');
   sfx(Math.random() < 0.5 ? 'locknload' : 'moveout', { vol: 0.85, delay: 0.35, important: true });
 }
 $('#againBtn').addEventListener('click', () => { restartRound(); playing = true; });
