@@ -11,6 +11,7 @@ Ego-Shooter im Stil von Counter-Strike 1.6, der sich wie Vampire Survivors spiel
 
 | Version | Phase | Inhalt |
 | --- | --- | --- |
+| v0.9.5 | Neue Evolutionen | Geschützturm + Nachtsicht = **Aperture-Abwehr** (schwenkt ±90°, erfasst sofort, doppelter Schaden); Roomba + Defuse-Kit = **Kampf-Roomba** (zieht Geld aus 170 Einheiten an, 40 % schneller, verletzt Gegner beim Überfahren) |
 | v0.9.4 | Zerstörbares | func_breakable geht kaputt: anschauen = draufschießen (wenn gerade kein Gegner im Visier ist), Explosionen zerstören mit; Splitter je nach Material (Glas, Holz, Metall, Computer …); Teile mit „bei Berührung/Draufstehen“ zerbrechen beim Anfassen; kommen zur nächsten Runde wieder |
 | v0.9.3 | de_rats komplett | Packer übernimmt jetzt in die BSP eingebaute Texturen (de_rats: Dosen, Schränke, Fliesen …) und Himmel aus gfx/env (`--sky ordner name`); de_rats mit Original-Himmel |
 | v0.9.2 | Leitern | Leitern hochklettern wie in CS (nach vorn drücken; Blick nach unten = runter; Springen = abspringen) |

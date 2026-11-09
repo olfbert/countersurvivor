@@ -189,7 +189,7 @@
 <div class="overlay show" id="start">
   <div class="box">
     <h1>COUNTER-SURVIVORS</h1>
-    <p class="muted">Roomba &amp; neue Maps · v0.9.4</p>
+    <p class="muted">Roomba &amp; neue Maps · v0.9.5</p>
     <div class="maps" id="mapPick"></div>
     <div class="barwrap"><div class="barfill" id="loadbar"></div></div>
     <p class="muted" id="loadtxt">Lade Map …</p>
@@ -219,7 +219,7 @@
 <div class="overlay" id="menu">
   <div class="box">
     <h1>PAUSE</h1>
-    <p class="muted">Counter-Survivors · v0.9.4</p>
+    <p class="muted">Counter-Survivors · v0.9.5</p>
     <h2>Teleport</h2>
     <div class="grid" id="tpGrid"></div>
     <h2>Einstellungen</h2>
@@ -259,7 +259,7 @@
 // BSP v30 wird zur Laufzeit gelesen: Geometrie, Lightmaps, Kollision, Entities.
 // Koordinaten wie in GoldSrc: Z zeigt nach oben, 1 Einheit ~ 1 Zoll.
 // =====================================================================
-const VERSION = '0.9.4';
+const VERSION = '0.9.5';
 const $ = s => document.querySelector(s);
 const err = msg => { $('#start').classList.add('show'); $('#err').textContent += msg + '\n'; };
 addEventListener('error', e => err('Fehler: ' + e.message + (e.lineno ? ' (Zeile ' + e.lineno + ')' : '')));
@@ -1766,6 +1766,8 @@ const EVOS = {
   flash: { p: 'nv', name: 'Dauerblender', desc: 'blendet ständig alles um dich herum' },
   smoke: { p: 'helm', name: 'Giftnebel', desc: 'giftige Wolke folgt dir' },
   c4: { p: 'kit', name: 'Bombenteppich', desc: 'legt 3 Bomben im Kreis' },
+  turret: { p: 'nv', name: 'Aperture-Abwehr', desc: 'schwenkt ±90°, erfasst sofort, doppelter Schaden' },
+  roomba: { p: 'kit', name: 'Kampf-Roomba', desc: 'saugt Geld von weit her an, schneller, überfährt Gegner' },
 };
 const W_MAX = 8, P_MAX = 5, SLOTS = 6;
 
@@ -1790,6 +1792,8 @@ function weaponStats(id, lvl, evo) {
     if (id === 'flash') s.aura = true;
     if (id === 'smoke') s.follow = true;
     if (id === 'c4') s.count = Math.max(s.count, 3);
+    if (id === 'turret') { s.arc = 90; s.dmg *= 2; s.lock = 0.08; }
+    if (id === 'roomba') { s.speed *= 1.4; s.magnet = 170; s.contact = 45; }
   }
   const P = game.passives;
   s.dmg *= 1 + 0.1 * (P.hollow || 0);
@@ -2753,6 +2757,7 @@ function updateTurrets(dt) {
     const eye = turretPoint(T, -1, TURRET.eye), S = T.w.st;
     T.laser = null;
     if (T.t < TURRET_DEPLOY) continue;
+    const ARC = (S.arc || 30) * Math.PI / 180, LOCK = S.lock !== undefined ? S.lock : TURRET_LOCK;
     // Ziel suchen: im Faecher vor dem Turm, in Reichweite, freie Sicht
     if (T.target && (T.target.state !== ALIVE || T.target.dead)) T.target = null;
     T.seek -= dt;
@@ -2764,7 +2769,7 @@ function updateTurrets(dt) {
         const dx = e.x - T.x, dy = e.y - T.y, d = Math.hypot(dx, dy);
         if (d > S.range || d < 8) continue;
         const rel = ((Math.atan2(dy, dx) - T.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
-        if (Math.abs(rel) <= TURRET_ARC) cand.push([d + (e === T.target ? -80 : 0), e]);
+        if (Math.abs(rel) <= ARC) cand.push([d + (e === T.target ? -80 : 0), e]);
       }
       cand.sort((a, b) => a[0] - b[0]);
       let found = null;
@@ -2773,8 +2778,8 @@ function updateTurrets(dt) {
     }
     // Drehen: zum Ziel, sonst langsam suchend hin und her
     let want;
-    if (T.target) want = Math.max(-TURRET_ARC, Math.min(TURRET_ARC, ((Math.atan2(T.target.y - T.y, T.target.x - T.x) - T.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI));
-    else want = Math.sin(game.time * 0.9 + T.id) * TURRET_ARC * 0.85;
+    if (T.target) want = Math.max(-ARC, Math.min(ARC, ((Math.atan2(T.target.y - T.y, T.target.x - T.x) - T.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI));
+    else want = Math.sin(game.time * 0.9 + T.id) * ARC * 0.85;
     const turn = (T.target ? 4 : 1.1) * dt, da = want - T.aim;
     T.aim += Math.max(-turn, Math.min(turn, da));
     // Laser: aus dem Auge in Zielrichtung
@@ -2792,7 +2797,7 @@ function updateTurrets(dt) {
     }
     T.laser = [eye, lb];
     // Feuern, sobald der Laser kurz auf dem Ziel lag
-    if (T.target && T.lock >= TURRET_LOCK && T.cd <= 0) {
+    if (T.target && T.lock >= LOCK && T.cd <= 0) {
       T.cd = S.int;
       const e = T.target, gb = [4, 7, 5, 8][T.shots++ % 4], m = turretPoint(T, gb, TURRET.muzzles[gb]);
       const hz = e.z + (38 + Math.random() * 16) * e.scale;
@@ -2969,6 +2974,17 @@ function updateRoombas(dt) {
     }
     if (R.stuck > 1 && R.target) { R.ban.set(R.target, game.time + 4); R.target = null; R.stuck = 0; }
     if (R.node >= 0) { const L = nodeLight(R.node); for (let c = 0; c < 3; c++) R.light[c] += (L[c] - R.light[c]) * Math.min(1, dt * 4); }
+    // Kampf-Roomba: Geld in der Naehe heranziehen, Gegner beim Ueberfahren verletzen
+    if (S.magnet) for (const d of drops) {
+      if (d.kind !== 'cash' || d.dead || d.fly || Math.abs(d.z - R.z) > 48) continue;
+      const dx = R.x - d.x, dy = R.y - d.y, dd = Math.hypot(dx, dy);
+      if (dd < S.magnet && dd > 1) { const k = Math.min(1, 320 * dt / dd); d.x += dx * k; d.y += dy * k; }
+    }
+    if (S.contact) for (const e of enemies) {
+      if (e.state !== ALIVE || Math.abs(e.z - R.z) > 40 || Math.abs(e.x - R.x) > 34 || Math.abs(e.y - R.y) > 34) continue;
+      damageEnemy(e, S.contact * dt, false, w, true);
+      if (Math.random() < dt * 6) { fx.push({ type: 'blood', p: [e.x, e.y, R.z + 8], v: [(Math.random() - .5) * 90, (Math.random() - .5) * 90, 40 + Math.random() * 60], t: 0, life: .3, s: 1.2 + Math.random() }); sfx('bhit_flesh', { pos: [R.x, R.y, R.z], vol: 0.3, gap: 0.15 }); }
+    }
     // einsaugen
     const pr = S.pick;
     for (const d of drops) {
