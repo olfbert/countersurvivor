@@ -36,6 +36,8 @@
   .kf { display: flex; align-items: center; gap: 5px; padding: 2px 7px; background: rgba(10, 12, 8, .55); border-radius: 3px; font-size: 11.5px; white-space: nowrap; transition: opacity .4s; }
   .kf.old { opacity: 0; }
   .kf .me { color: #9fd0ff; }
+  .kf .mate { color: #c9e4ff; }
+  .kf.mine { box-shadow: inset 0 0 0 1px rgba(255, 90, 60, .8); }
   .kf .vic { color: #ff9d7a; }
   .kf.boss .vic { color: #ffd34a; font-weight: 700; }
   .kf img { height: 15px; width: auto; filter: drop-shadow(0 0 1px #000); }
@@ -1724,7 +1726,7 @@ function damageEnemy(e, dmg, head, w, quiet) {
   e.seq = e.m.seq[head ? 'head' : DEATHS[(Math.random() * DEATHS.length) | 0]];
   game.kills++;
   if (w) w.kills++;
-  killfeed(e, w, head);
+  if (killfeed(e, w, head) && NET.role === 'host') netSendAll(netKfMsg(e, w && w.id, head, NET.name));
   dropLoot(e);
   if (e === game.boss) { if (NET.role === 'host') netBossDown(e, NET.name); else { game.boss = null; toast(e.boss.name + ' besiegt!'); sfx('enemydown', { vol: 0.8, delay: 0.5, important: true }); } }
   return true;
@@ -3323,21 +3325,26 @@ function renderRoombaIcon() {
 
 // ---------------------------------------------------------------- Killfeed: hoechstens 5 Zeilen, normale Kills gedrosselt
 const KF_NAMES = { terror: 'Phoenix', leet: 'Leet Krew', arctic: 'Arctic Avenger', guerilla: 'Guerilla', militia: 'Midwest Militia' };
-let kfLast = -9;
-function killfeed(e, w, head) {
-  const big = !!e.boss || e.elite;
-  if (!big && game.time - kfLast < 0.3 && game.time >= kfLast) return;
-  kfLast = game.time;
+const escHtml = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+let kfLast = new Map();
+// who: Name des Schuetzen (leer = ich selbst; im Mehrspieler steht dann mein Name da). Liefert true, wenn die Zeile gezeigt wurde.
+function killfeed(e, w, head, who) {
+  const mine = who == null, name = mine ? (NET.role ? NET.name : 'Du') : who;
+  const big = !!e.boss || e.elite, last = kfLast.has(name) ? kfLast.get(name) : -9;
+  if (!big && game.time - last < 0.3 && game.time >= last) return false;
+  kfLast.set(name, game.time);
   const box = $('#killfeed');
   const row = document.createElement('div');
-  row.className = 'kf' + (e.boss ? ' boss' : '');
-  const icon = w && WDEF[w.id] && ICONS[WDEF[w.id].icon];
-  row.innerHTML = '<span class="me">Du</span>' + (icon ? `<img src="${icon}">` : '') + (head && ICONS.hstrain ? `<img class="hs" src="${ICONS.hstrain}">` : '') +
-    `<span class="vic">${e.boss ? e.boss.name : (e.elite ? 'Elite-' : '') + (KF_NAMES[e.key] || e.key)}</span>`;
+  row.className = 'kf' + (e.boss ? ' boss' : '') + (mine && NET.role ? ' mine' : '');
+  const wid = typeof w === 'string' ? w : w && w.id;
+  const icon = wid && WDEF[wid] && ICONS[WDEF[wid].icon];
+  row.innerHTML = `<span class="${mine ? 'me' : 'mate'}">${escHtml(name)}</span>` + (icon ? `<img src="${icon}">` : '') + (head && ICONS.hstrain ? `<img class="hs" src="${ICONS.hstrain}">` : '') +
+    `<span class="vic">${escHtml(e.boss ? e.boss.name : (e.elite ? 'Elite-' : '') + (KF_NAMES[e.key] || e.key))}</span>`;
   box.appendChild(row);
   while (box.children.length > 5) box.firstChild.remove();
   setTimeout(() => row.classList.add('old'), 4500);
   setTimeout(() => row.remove(), 5000);
+  return true;
 }
 
 // ---------------------------------------------------------------- Zerstoerbares (func_breakable): Lueftungsgitter, Glas, Kisten ...
@@ -3938,7 +3945,7 @@ function endRound(won) {
   }, won ? 1800 : 1300);
 }
 function restartRound() {
-  enemies = []; drops = []; eShots = []; nades = []; c4s = []; fx = []; zones = []; delayed = []; turrets = []; roombas = []; resetBreakables(); $('#killfeed').innerHTML = ''; kfLast = -9;
+  enemies = []; drops = []; eShots = []; nades = []; c4s = []; fx = []; zones = []; delayed = []; turrets = []; roombas = []; resetBreakables(); $('#killfeed').innerHTML = ''; kfLast.clear();
   Object.assign(game, { hp: 100, maxHp: 100, kills: 0, time: 0, over: false, won: false, spawnAcc: 0, flowT: 0, hurt: 0, deathT: 0,
     xp: 0, xpNext: xpNeed(1), level: 1, money: 0, pending: 0, weapons: [], passives: {}, bossIdx: 0, boss: null, shake: 0, banked: false, revived: false, dead: false });
   if (NET.role === 'host') { NET.inRound = true; NET.bossInfo = null; netSendAll({ t: 'start', time: 0 }); }
@@ -4016,8 +4023,8 @@ function netReset() {
 }
 function netLobby() {
   const names = NET.role === 'host'
-    ? [NET.name + ' (Host)', ...[...NET.players.values()].map(P => P.name)]
-    : Object.values(NET.names);
+    ? [NET.name + ' (Host)', ...[...NET.players.values()].map(P => P.name)].map(escHtml)
+    : Object.values(NET.names).map(n => escHtml(String(n).slice(0, 12)));
   if (NET.role === 'host') netStatus(`Raum <b style="font-size:20px;letter-spacing:.1em">${NET.code}</b> · Code an die Mitspieler geben<br>Im Raum (${names.length}/${NET_MAX}): ${names.join(', ')}`);
   else if (NET.role === 'guest') netStatus(`Verbunden mit Raum <b>${NET.code}</b> · Im Raum (${names.length}/${NET_MAX}): ${names.join(', ') || '…'}<br>Der Host startet die Runde.`);
   const sb = $('#startBtn');
@@ -4116,8 +4123,11 @@ function hostDamageRemote(e, dmg, head, P, wid) {
   e.state = DYING; e.t = 0; e.f = 0; e.fuse = -1;
   e.seq = e.m.seq[head ? 'head' : DEATHS[(Math.random() * DEATHS.length) | 0]];
   netSend(P.ev, { t: 'kill', id: e.id, head, wid, xp: e.xp, elite: e.elite, boss: e.boss ? e.boss.name : null, key: e.key, x: e.x, y: e.y, z: e.z, scale: e.scale });
+  if (killfeed(e, wid, head, P.name)) netSendAll(netKfMsg(e, wid, head, P.name), P);
   if (e === game.boss) netBossDown(e, P.name);
 }
+// Killfeed-Zeile fuer die anderen (wer, Waffe, Kopfschuss, Opfer)
+function netKfMsg(e, wid, head, name) { return { t: 'kf', n: name, w: wid || 0, h: head ? 1 : 0, k: e.key, el: e.elite ? 1 : 0, b: e.boss ? e.boss.name : 0 }; }
 function netBossDown(e, by) {
   game.boss = null;
   const s = e.boss.name + ' besiegt' + (by ? ' (' + by + ')' : '') + '!';
@@ -4247,7 +4257,7 @@ function netGuestMsg(m) {
     location.href = `?map=${encodeURIComponent(m.map)}&join=${NET.code}&name=${encodeURIComponent(NET.name)}${QS.get('peer') ? '&peer=' + QS.get('peer') : ''}`;
   } else if (m.t === 'full') {
     const code = NET.code; NET.role = null; netReset(); netLobby();
-    netStatus(`Raum <b>${code}</b> ist voll (max. ${m.max} Spieler).`);
+    netStatus(`Raum <b>${code}</b> ist voll (max. ${+m.max || NET_MAX} Spieler).`);
   } else if (m.t === 'welcome') { NET.idx = m.idx; netLobby(); }
   else if (m.t === 'players') { NET.names = m.list; netLobby(); }
   else if (m.t === 'start') netGuestStart(m);
@@ -4258,6 +4268,7 @@ function netGuestMsg(m) {
   else if (m.t === 'bossdown') { NET.bossInfo = null; game.boss = null; }
   else if (m.t === 'boom') netShowBoom(m);
   else if (m.t === 'end') { if (!game.over) endRound(m.won && !game.dead); }
+  else if (m.t === 'kf') { if (NET.inRound) killfeed({ key: String(m.k), elite: !!m.el, boss: m.b ? { name: String(m.b) } : null }, m.w ? String(m.w) : null, !!m.h, String(m.n || 'Spieler').slice(0, 12)); }
   else if (m.t === 'lobby') { if (NET.inRound || game.over) toMainMenu(true); }
 }
 function netGuestStart(m) {

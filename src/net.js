@@ -48,8 +48,8 @@ function netReset() {
 }
 function netLobby() {
   const names = NET.role === 'host'
-    ? [NET.name + ' (Host)', ...[...NET.players.values()].map(P => P.name)]
-    : Object.values(NET.names);
+    ? [NET.name + ' (Host)', ...[...NET.players.values()].map(P => P.name)].map(escHtml)
+    : Object.values(NET.names).map(n => escHtml(String(n).slice(0, 12)));
   if (NET.role === 'host') netStatus(`Raum <b style="font-size:20px;letter-spacing:.1em">${NET.code}</b> · Code an die Mitspieler geben<br>Im Raum (${names.length}/${NET_MAX}): ${names.join(', ')}`);
   else if (NET.role === 'guest') netStatus(`Verbunden mit Raum <b>${NET.code}</b> · Im Raum (${names.length}/${NET_MAX}): ${names.join(', ') || '…'}<br>Der Host startet die Runde.`);
   const sb = $('#startBtn');
@@ -148,8 +148,11 @@ function hostDamageRemote(e, dmg, head, P, wid) {
   e.state = DYING; e.t = 0; e.f = 0; e.fuse = -1;
   e.seq = e.m.seq[head ? 'head' : DEATHS[(Math.random() * DEATHS.length) | 0]];
   netSend(P.ev, { t: 'kill', id: e.id, head, wid, xp: e.xp, elite: e.elite, boss: e.boss ? e.boss.name : null, key: e.key, x: e.x, y: e.y, z: e.z, scale: e.scale });
+  if (killfeed(e, wid, head, P.name)) netSendAll(netKfMsg(e, wid, head, P.name), P);
   if (e === game.boss) netBossDown(e, P.name);
 }
+// Killfeed-Zeile fuer die anderen (wer, Waffe, Kopfschuss, Opfer)
+function netKfMsg(e, wid, head, name) { return { t: 'kf', n: name, w: wid || 0, h: head ? 1 : 0, k: e.key, el: e.elite ? 1 : 0, b: e.boss ? e.boss.name : 0 }; }
 function netBossDown(e, by) {
   game.boss = null;
   const s = e.boss.name + ' besiegt' + (by ? ' (' + by + ')' : '') + '!';
@@ -279,7 +282,7 @@ function netGuestMsg(m) {
     location.href = `?map=${encodeURIComponent(m.map)}&join=${NET.code}&name=${encodeURIComponent(NET.name)}${QS.get('peer') ? '&peer=' + QS.get('peer') : ''}`;
   } else if (m.t === 'full') {
     const code = NET.code; NET.role = null; netReset(); netLobby();
-    netStatus(`Raum <b>${code}</b> ist voll (max. ${m.max} Spieler).`);
+    netStatus(`Raum <b>${code}</b> ist voll (max. ${+m.max || NET_MAX} Spieler).`);
   } else if (m.t === 'welcome') { NET.idx = m.idx; netLobby(); }
   else if (m.t === 'players') { NET.names = m.list; netLobby(); }
   else if (m.t === 'start') netGuestStart(m);
@@ -290,6 +293,7 @@ function netGuestMsg(m) {
   else if (m.t === 'bossdown') { NET.bossInfo = null; game.boss = null; }
   else if (m.t === 'boom') netShowBoom(m);
   else if (m.t === 'end') { if (!game.over) endRound(m.won && !game.dead); }
+  else if (m.t === 'kf') { if (NET.inRound) killfeed({ key: String(m.k), elite: !!m.el, boss: m.b ? { name: String(m.b) } : null }, m.w ? String(m.w) : null, !!m.h, String(m.n || 'Spieler').slice(0, 12)); }
   else if (m.t === 'lobby') { if (NET.inRound || game.over) toMainMenu(true); }
 }
 function netGuestStart(m) {

@@ -11,6 +11,7 @@ Ego-Shooter im Stil von Counter-Strike 1.6, der sich wie Vampire Survivors spiel
 
 | Version | Phase | Inhalt |
 | --- | --- | --- |
+| v0.11.3 | Killfeed im Mehrspieler | Killfeed zeigt den Namen des Schützen statt »Du« und auch die Kills der Mitspieler (mit Waffe und Kopfschuss); eigene Zeilen rot umrandet wie in CS 1.6; Spielernamen werden sicher angezeigt |
 | v0.11.2 | Roomba-Wegfindung | Roomba plant seinen Weg über das Laufgitter (A*) statt geradeaus zu fahren: kommt um Ecken, Kisten und Treppen, merkt sich unerreichbares Geld und lässt es liegen, springt zum Spieler zurück, wenn er abgehängt ist (z. B. nach einer Leiter); Mehrspieler-Räume auf 8 Spieler begrenzt (»Raum voll«), Lobby zeigt die Belegung |
 | v0.11 | Mehrspieler | Optionaler Koop im selben WLAN: Raum erstellen → 4-stelliger Code → Mitspieler treten bei (Vermittlung über PeerJS, danach direkt per WebRTC). Host rechnet die Gegner, jeder hat eigenes Geld, Level, Waffen und Beute; Gegner jagen den nächsten Spieler, mehr Spieler = mehr Gegner; Mitspieler als GIGN mit Namen, im Radar hellblau, ihre Türme/Roombas sichtbar; Explosionen der anderen sichtbar; Gefallene schauen zu bis Rundenende; Gast mit anderer Map lädt automatisch die Map des Hosts |
 | v0.10.2 | Fix | Killfeed blieb in der zweiten Runde leer (Drossel-Zeit wurde beim Neustart nicht zurückgesetzt) |
