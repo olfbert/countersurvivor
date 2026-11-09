@@ -11,6 +11,7 @@ Ego-Shooter im Stil von Counter-Strike 1.6, der sich wie Vampire Survivors spiel
 
 | Version | Phase | Inhalt |
 | --- | --- | --- |
+| v0.8 | Geschützturm | Neue Waffe „Geschützturm“ (Portal-Sentry): mit dem Knopf TURM (PC: Taste T) vor dir hinstellen, klappt auf, sucht mit rotem Laser und feuert nur in einem 60°-Fächer nach vorn (±30°), sobald der Laser kurz auf dem Ziel liegt; bleibt stehen, Stufen bringen mehr Schaden, Reichweite, Feuerrate und bis zu 3 Türme gleichzeitig; Türme im Radar (hellblau); im Testmenü „Geschützturm geben“ |
 | v0.7 | Sound | Original-CS-Sounds: jede Waffe mit eigenem Schuss, Nachladen, Messer, Granaten, C4 mit schneller werdendem Piepen, Treffer, Headshots, Todesschreie, Schritte (Sand oder Stein je nach Boden), Funksprüche zu Rundenstart, Sieg und Niederlage, Boss-Auftritte, Geisel-Rufe auf cs_747; Geräusche kommen räumlich von links/rechts und werden mit Abstand leiser; Lautstärke im Menü |
 | v0.6 | Props & Radar | Echte Deko-Modelle in de_dust (Jeep, Lkw, 13 Fässer, 6 Markisen) statt Platzhalter-Boxen, beleuchtet vom Boden darunter; Radar oben rechts (dreht mit, Gegner rot, Elites orange, Boss groß, Kisten gelb; dunkler = andere Etage), für cs_747 aus der Original-Übersichtskarte (automatisch eingepasst), für de_dust beim Laden von oben gerendert; cs_747 jetzt mit allen Texturen; Teleport zu den Geiseln landet auf begehbarem Boden (vorher kamen dort keine Gegner); Radar im Menü abschaltbar |
 | v0.5 | Mehr Maps | Map-Auswahl im Startbildschirm; zweite Map cs_747 (Flugzeug, Geiselrettung) wird aus `maps/` nachgeladen; Türen stehen offen, Teleport zu Geiseln und Rettungszone; Ersatzhimmel für Maps ohne Himmelsbilder; **Fix:** bei vielen Gegnern hinter Wänden hörten die Waffen auf zu schießen |
@@ -49,6 +50,7 @@ tools/pack_map.py     BSP + WAD + Himmel -> Map-Paket (nur benutzte Texturen)
 tools/props.py        Deko-Modelle (cycler_sprite/env_model) -> statische Meshes + gemeinsamer Textur-Atlas
 tools/overview.py     passt eine CS-Übersichtskarte (grüner Rand) automatisch an die Map an (fürs Radar)
 tools/skymatch.py     ordnet Himmelsbilder per Kantenabgleich den Würfelseiten zu
+tools/convert_turret.py Portal-Turm (SMD + PNG) -> Turm-Paket (starre Knochen, Aufklapp- und Feueranimation)
 tools/pack_sounds.py  WAVs aus cstrike/sound -> Sound-Paket (8 Bit mono, Stille am Ende gekürzt)
 tools/pack_icons.py   Waffen-/Ausrüstungs-Icons (VGUI/XGUI) und Kisten-Textur als JSON
 tools/build.py        setzt Pakete (Base64/JSON) und Version in eine Vorlage ein
@@ -62,11 +64,12 @@ python3 tools/pack_map.py cs_747.bin cs_747.bsp --wad cs_747.wad --wad cstrike.w
 python3 tools/convert_mdl.py models/ czde_dust.wad models.bin terror,leet,arctic,guerilla,militia && gzip -9 -k models.bin
 python3 tools/pack_icons.py gfx/ czde_dust.wad icons.json
 python3 tools/pack_sounds.py sound/ sounds.bin && gzip -9 -k sounds.bin
-python3 tools/build.py src/game.template.html index.html 0.7 PACK=map.bin.gz MODELS=models.bin.gz ICONS=@icons.json SOUNDS=sounds.bin.gz
+python3 tools/convert_turret.py Turret/ turret.bin && gzip -9 -k turret.bin
+python3 tools/build.py src/game.template.html index.html 0.8 PACK=map.bin.gz MODELS=models.bin.gz ICONS=@icons.json SOUNDS=sounds.bin.gz TURRET=turret.bin.gz
 ```
 
 Die BSP wird erst im Browser gelesen (Geometrie, Lightmaps, Kollision, Spawns, Bombsites). Weitere Maps sind damit später nur ein neues Datenpaket.
 
 ## Hinweis zu den Spieldateien
 
-Map, Texturen, Himmel, Deko- und Spielermodelle sowie die Sounds stammen von Valve (Counter-Strike / Condition Zero) und stecken eingebettet in den gebauten HTML-Dateien. Gedacht für private Tests; die Rechte liegen bei Valve.
+Map, Texturen, Himmel, Deko- und Spielermodelle sowie die Sounds stammen von Valve, der Geschützturm aus Portal (ebenfalls Valve) (Counter-Strike / Condition Zero) und stecken eingebettet in den gebauten HTML-Dateien. Gedacht für private Tests; die Rechte liegen bei Valve.
