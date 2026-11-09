@@ -207,7 +207,7 @@
 <div class="overlay show" id="start">
   <div class="box">
     <h1>COUNTER-SURVIVORS</h1>
-    <p class="muted">Waffenhändler · v0.10.1</p>
+    <p class="muted">Waffenhändler · v0.10.2</p>
     <div class="maps" id="mapPick"></div>
     <div class="barwrap"><div class="barfill" id="loadbar"></div></div>
     <p class="muted" id="loadtxt">Lade Map …</p>
@@ -249,7 +249,7 @@
 <div class="overlay" id="menu">
   <div class="box">
     <h1>PAUSE</h1>
-    <p class="muted">Counter-Survivors · v0.10.1</p>
+    <p class="muted">Counter-Survivors · v0.10.2</p>
     <h2>Teleport</h2>
     <div class="grid" id="tpGrid"></div>
     <h2>Einstellungen</h2>
@@ -290,7 +290,7 @@
 // BSP v30 wird zur Laufzeit gelesen: Geometrie, Lightmaps, Kollision, Entities.
 // Koordinaten wie in GoldSrc: Z zeigt nach oben, 1 Einheit ~ 1 Zoll.
 // =====================================================================
-const VERSION = '0.10.1';
+const VERSION = '0.10.2';
 const $ = s => document.querySelector(s);
 const err = msg => { $('#start').classList.add('show'); $('#err').textContent += msg + '\n'; };
 addEventListener('error', e => err('Fehler: ' + e.message + (e.lineno ? ' (Zeile ' + e.lineno + ')' : '')));
@@ -3133,7 +3133,7 @@ const KF_NAMES = { terror: 'Phoenix', leet: 'Leet Krew', arctic: 'Arctic Avenger
 let kfLast = -9;
 function killfeed(e, w, head) {
   const big = !!e.boss || e.elite;
-  if (!big && game.time - kfLast < 0.3) return;
+  if (!big && game.time - kfLast < 0.3 && game.time >= kfLast) return;
   kfLast = game.time;
   const box = $('#killfeed');
   const row = document.createElement('div');
@@ -3721,7 +3721,7 @@ function endRound(won) {
   }, won ? 1800 : 1300);
 }
 function restartRound() {
-  enemies = []; drops = []; eShots = []; nades = []; c4s = []; fx = []; zones = []; delayed = []; turrets = []; roombas = []; resetBreakables(); $('#killfeed').innerHTML = '';
+  enemies = []; drops = []; eShots = []; nades = []; c4s = []; fx = []; zones = []; delayed = []; turrets = []; roombas = []; resetBreakables(); $('#killfeed').innerHTML = ''; kfLast = -9;
   Object.assign(game, { hp: 100, maxHp: 100, kills: 0, time: 0, over: false, won: false, spawnAcc: 0, flowT: 0, hurt: 0, deathT: 0,
     xp: 0, xpNext: xpNeed(1), level: 1, money: 0, pending: 0, weapons: [], passives: {}, bossIdx: 0, boss: null, shake: 0, banked: false, revived: false });
   game.maxHp = game.hp = 100 + 10 * ml('hp');
