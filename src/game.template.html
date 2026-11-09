@@ -1259,10 +1259,28 @@ function navNodeAt(x, y, zFeet, tol = 30) {
 
 // Dijkstra vom Spielerknoten (bis 5000 Einheiten Weg); merkt sich Spawn-Kandidaten
 function updateFlow(src) {
+  flowFrom([[src, 0]]);
+  // Steht der Spieler auf einer Insel (Kiste, Fass), zu der kein Weg fuehrt, laufen die Gegner zum Boden drumherum
+  if (src >= 0 && NAV.reach.length < 20) {
+    const seeds = [[src, 0]], x = NAV.x[src], y = NAV.y[src], z = NAV.z[src];
+    const cx = Math.floor((x - NAV.ox) / CELL), cy = Math.floor((y - NAV.oy) / CELL);
+    for (let iy = cy - 14; iy <= cy + 14; iy++) for (let ix = cx - 14; ix <= cx + 14; ix++) {
+      if (ix < 0 || iy < 0 || ix >= NAV.W || iy >= NAV.H) continue;
+      const ci = iy * NAV.W + ix, s = NAV.colStart[ci]; if (s < 0) continue;
+      for (let k = 0; k < NAV.colCount[ci]; k++) {
+        const j = s + k, dz = z - NAV.z[j];
+        if (dz < 8 || dz > 200 || NAV.dist[j] < Infinity) continue;
+        const h = Math.hypot(NAV.x[j] - x, NAV.y[j] - y);
+        if (h < 230) seeds.push([j, h + dz * 0.3]);
+      }
+    }
+    if (seeds.length > 1) flowFrom(seeds);
+  }
+}
+function flowFrom(seeds) {
   const D = NAV.dist; D.fill(Infinity);
-  if (src < 0) return;
-  const heap = [src]; D[src] = 0;
-  const reach = [];
+  const heap = [], reach = [];
+  if (seeds[0][0] < 0) { NAV.reach = reach; return; }
   const push = i => { heap.push(i); let c = heap.length - 1; while (c > 0) { const p = (c - 1) >> 1; if (D[heap[p]] <= D[heap[c]]) break; [heap[p], heap[c]] = [heap[c], heap[p]]; c = p; } };
   const pop = () => {
     const top = heap[0], last = heap.pop();
@@ -1271,6 +1289,7 @@ function updateFlow(src) {
       if (m === c) break; [heap[m], heap[c]] = [heap[c], heap[m]]; c = m; } }
     return top;
   };
+  for (const [i, d] of seeds) if (d < D[i]) { D[i] = d; push(i); }
   const done = new Uint8Array(NAV.n);
   while (heap.length) {
     const i = pop();
@@ -1398,8 +1417,9 @@ function updateEnemies(dt) {
       continue;
     }
     const dx = p.o[0] - e.x, dy = p.o[1] - e.y, d = Math.hypot(dx, dy);
-    const sameLevel = Math.abs(feet - e.z) < 44 * Math.max(1, e.scale * 0.8);
     const reach = 50 * (e.boss ? e.scale * 0.8 : 1);
+    // gleiche Ebene, oder der Spieler steht direkt darueber auf einer Kiste (dann schlagen sie nach oben)
+    const sameLevel = Math.abs(feet - e.z) < 44 * Math.max(1, e.scale * 0.8) || (feet > e.z && feet - e.z < 110 && d < reach + 26);
     // Sichtlinie zum Spieler (fuer Schuetzen und Bosse), nur 3x pro Sekunde pruefen
     e.losT -= dt;
     if ((e.shooter || e.boss) && e.losT <= 0) { e.losT = 0.3 + Math.random() * 0.1; e.los = d < 1100 && trace([e.x, e.y, e.z + 56 * e.scale], eye, 0).fraction > 0.99; }
@@ -3295,7 +3315,7 @@ $('#restartBtn').addEventListener('click', () => { restartRound(); togglePause(f
   requestAnimationFrame(t => { last = t; frame(t); });
   // Test-Schnittstelle (fuer automatische Tests)
   window.__cs = { player, input, teleport, trace, SPOTS, WORLD, BSP, NAV, game, get enemies() { return enemies; }, settings,
-    get drops() { return drops; }, addXp, addWeapon, refreshStats, openChest, get zones() { return zones; }, dbg: () => JSON.stringify({nades: nades.length, c4: c4s.length, shots: eShots.length, fx: fx.length}), start: () => sb.click(), get PROPS() { return PROPS; }, RADAR, drawRadar, SND, sfx, get turrets() { return turrets; }, placeTurret, setLight: v => LIGHT.splice(0, 3, ...v) };
+    get drops() { return drops; }, addXp, addWeapon, refreshStats, openChest, get zones() { return zones; }, dbg: () => JSON.stringify({nades: nades.length, c4: c4s.length, shots: eShots.length, fx: fx.length}), start: () => sb.click(), get PROPS() { return PROPS; }, RADAR, drawRadar, SND, sfx, get turrets() { return turrets; }, placeTurret, flowFrom,  setLight: v => LIGHT.splice(0, 3, ...v) };
 })();
 </script>
 </body>

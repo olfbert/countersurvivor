@@ -100,7 +100,8 @@ def main():
         e1 = [b_[i] - a[i] for i in range(3)]
         e2 = [cc[i] - a[i] for i in range(3)]
         gn = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]]
-        vn = [sum(c[k][2][i] for k in range(3)) for i in range(3)]
+        rn = [xf(root, c[k][2], 0) for k in range(3)]   # Normalen genauso drehen wie die Positionen
+        vn = [sum(rn[k][i] for k in range(3)) for i in range(3)]
         order = (0, 1, 2) if sum(gn[i] * vn[i] for i in range(3)) >= 0 else (0, 2, 1)
         ids = []
         for k in order:
