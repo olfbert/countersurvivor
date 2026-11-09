@@ -29,6 +29,8 @@
   #radar { position: absolute; inset: auto; top: max(8px, env(safe-area-inset-top)); right: max(10px, env(safe-area-inset-right)); width: 128px; height: 128px;
     border-radius: 50%; pointer-events: none; box-shadow: 0 0 0 1px rgba(255, 180, 60, .35), 0 2px 8px rgba(0, 0, 0, .5); }
   #radar.off { display: none; }
+  #underwater { position: absolute; inset: 0; background: rgba(20, 70, 80, .38); pointer-events: none; display: none; }
+  #underwater.on { display: block; }
   #killfeed { position: absolute; top: max(10px, env(safe-area-inset-top)); right: max(150px, calc(env(safe-area-inset-right) + 142px)); display: flex; flex-direction: column; align-items: flex-end; gap: 3px; pointer-events: none; }
   #hud:not(.radar) #killfeed { right: max(12px, env(safe-area-inset-right)); top: max(56px, calc(env(safe-area-inset-top) + 48px)); }
   .kf { display: flex; align-items: center; gap: 5px; padding: 2px 7px; background: rgba(10, 12, 8, .55); border-radius: 3px; font-size: 11.5px; white-space: nowrap; transition: opacity .4s; }
@@ -80,6 +82,16 @@
   #start { background: radial-gradient(ellipse at center, rgba(28,31,23,.55), rgba(10,11,8,.92)); }
   #start .box { text-align: center; }
   .maps { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 12px 0 2px; }
+  .shopbox { max-width: min(94vw, 620px); max-height: 92vh; overflow-y: auto; }
+  .srow { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid rgba(255, 255, 255, .06); }
+  .srow > img { width: 46px; height: 30px; object-fit: contain; }
+  .srow > div { flex: 1; line-height: 1.25; }
+  .srow b { display: block; font-size: 14px; }
+  .srow span { font-size: 11.5px; opacity: .75; }
+  .srow em { display: flex; gap: 3px; margin-top: 3px; }
+  .srow em i { width: 14px; height: 5px; background: rgba(255, 255, 255, .15); }
+  .srow em i.on { background: #ffb43c; }
+  .srow button { min-width: 96px; }
   .maps button { min-width: 150px; text-align: left; padding: 7px 12px; line-height: 1.3; }
   .maps button b { display: block; font-size: 15px; letter-spacing: .04em; }
   .maps button span { font-size: 11px; opacity: .75; }
@@ -166,6 +178,7 @@
 <div id="hud">
   <div id="cross"><i></i><i></i><i></i><i></i></div>
   <button id="menuBtn" aria-label="Menü">☰</button>
+  <div id="underwater"></div>
   <canvas id="radar"></canvas>
   <div id="killfeed"></div>
   <div id="stats"></div>
@@ -189,13 +202,23 @@
 <div class="overlay show" id="start">
   <div class="box">
     <h1>COUNTER-SURVIVORS</h1>
-    <p class="muted">Roomba &amp; neue Maps · v__VERSION__</p>
+    <p class="muted">Waffenhändler · v__VERSION__</p>
     <div class="maps" id="mapPick"></div>
     <div class="barwrap"><div class="barfill" id="loadbar"></div></div>
     <p class="muted" id="loadtxt">Lade Map …</p>
     <div id="err"></div>
     <button id="startBtn" disabled>SPIELEN</button>
+    <div style="margin-top:10px"><button id="shopBtn">WAFFENHÄNDLER</button> <span class="muted" id="startBank" style="margin-left:8px"></span></div>
     <p class="muted" id="ctrlHint" style="margin-top:12px"></p>
+  </div>
+</div>
+
+<div class="overlay" id="shop">
+  <div class="box shopbox">
+    <div class="buyhead"><b>WAFFENHÄNDLER</b><span>Konto: <b id="bankVal"></b></span></div>
+    <p class="muted" style="margin:4px 0 0">Am Ende jeder Runde (und beim Verlassen) wandert dein gesammeltes Geld aufs Konto.</p>
+    <div id="shopList"></div>
+    <div style="text-align:center;margin-top:10px"><button id="shopClose" class="on" style="min-width:140px;font-weight:bold">ZURÜCK</button></div>
   </div>
 </div>
 
@@ -212,7 +235,9 @@
     <h1 id="endTitle">GEFALLEN</h1>
     <p id="deadStats"></p>
     <div id="endTable"></div>
+    <p id="bankMsg" class="muted"></p>
     <button id="againBtn" class="on" style="min-width:160px;font-weight:bold;margin-top:8px">NOCHMAL</button>
+    <button id="endMenuBtn" style="min-width:140px;margin-top:8px">HAUPTMENÜ</button>
   </div>
 </div>
 
@@ -242,7 +267,8 @@
     <h2>Steuerung</h2>
     <p class="muted" id="ctrlHint2"></p>
     <p class="muted">Map, Texturen und Himmel: Valve (Counter-Strike: Condition Zero) – nur für private Tests.</p>
-    <div style="text-align:center;margin-top:12px"><button id="resumeBtn" class="on" style="min-width:160px;font-weight:bold">WEITER</button></div>
+    <div style="text-align:center;margin-top:12px"><button id="resumeBtn" class="on" style="min-width:160px;font-weight:bold">WEITER</button>
+      <button id="quitBtn" style="min-width:140px">HAUPTMENÜ</button></div>
   </div>
 </div>
 
@@ -416,7 +442,7 @@ async function loadTexture(bytes, type, { repeat = true, mips = true } = {}) {
 const CONTENTS_EMPTY = -1, CONTENTS_SOLID = -2;
 const TOOL_TEX = new Set(['hint', 'skip', 'clip', 'null', 'origin', 'aaatrigger', 'bevel']);
 const HIDDEN_CLASSES = new Set(['func_bomb_target', 'func_buyzone', 'func_hostage_rescue', 'func_vip_safetyzone', 'func_escapezone', 'func_ladder', 'func_mortar_field']);
-const NONSOLID_CLASSES = new Set(['func_illusionary']);
+const NONSOLID_CLASSES = new Set(['func_illusionary', 'func_water']);
 const PROP_MODELS = new Set();   // Deko-Modelle, die schon als echtes Modell vorliegen
 // Tueren stehen offen (wie nach dem Beruehren im Original); "durchlaessige" Tueren (Flag 8) sind ohne Kollision.
 function doorOffset(e, m) {
@@ -871,6 +897,28 @@ function friction(dt) {
   const ns = Math.max(0, speed - control * MOVE.friction * dt) / speed;
   p.v[0] *= ns; p.v[1] *= ns; p.v[2] *= ns;
 }
+// Wasser (GoldSrc-Inhalte -3 Wasser, -4 Schleim, -5 Lava): 0 trocken, 1 Fuesse, 2 Huefte, 3 Kopf unter Wasser
+let WATERS = null;   // func_water: Wasser als Brush-Entity (Inhalt ueber "skin", meist -3)
+function waterLevel() {
+  const o = player.o, h = BSP.models[0].head[0];
+  if (!WATERS) WATERS = BSP.entities.filter(e => e.classname === 'func_water' && e.model && e.model[0] === '*').map(e => {
+    const m = BSP.models[+e.model.slice(1)], c = vec3(e.origin || '0 0 0');
+    return { m, o: c, mins: [m.mins[0] + c[0], m.mins[1] + c[1], m.mins[2] + c[2]], maxs: [m.maxs[0] + c[0], m.maxs[1] + c[1], m.maxs[2] + c[2]] };
+  });
+  const wet = z => {
+    const c = pointContents(BSP.hull0, h, o[0], o[1], z);
+    if (c <= -3 && c >= -5) return true;
+    for (const W of WATERS) {
+      if (o[0] < W.mins[0] || o[0] > W.maxs[0] || o[1] < W.mins[1] || o[1] > W.maxs[1] || z < W.mins[2] || z > W.maxs[2]) continue;
+      if (pointContents(BSP.hull0, W.m.head[0], o[0] - W.o[0], o[1] - W.o[1], z - W.o[2]) !== -1) return true;
+    }
+    return false;
+  };
+  if (!wet(o[2] - 35)) return 0;
+  if (!wet(o[2])) return 1;
+  if (!wet(o[2] + MOVE.view)) return 2;
+  return 3;
+}
 function touchingLadder() {
   const o = player.o;
   for (const L of LADDERS)
@@ -906,6 +954,32 @@ function playerMove(dt) {
     // beim Klettern leicht an die Leiter ziehen, damit man oben durch die Luke bzw. ueber die Kante kommt
     if (dn < 0) { p.v[0] -= n[0] * 60; p.v[1] -= n[1] * 60; }
     if (p.onGround && dn > 0) { p.v[0] += n[0] * 200; p.v[1] += n[1] * 200; }
+    flyMove(dt); categorize();
+    return;
+  }
+  // Schwimmen (PM_WaterMove): in Blickrichtung, Springen = hoch, an der Oberflaeche mit Springen raus
+  p.water = waterLevel();
+  if (p.water >= 2) {
+    const cp = Math.cos(p.pitch);
+    const f = [Math.cos(p.yaw) * cp, Math.sin(p.yaw) * cp, Math.sin(p.pitch)], r = [Math.sin(p.yaw), -Math.cos(p.yaw), 0];
+    const wv = [0, 1, 2].map(i => (f[i] * input.fwd + r[i] * input.side) * MOVE.maxspeed * 0.8);
+    if (p.jumpHeld || p.jumpQueued) wv[2] = Math.max(wv[2], MOVE.maxspeed * 0.75);
+    else if (!input.fwd && !input.side) wv[2] -= 60;
+    // Wassersprung: Kopf ueber Wasser + Springen -> kraeftig raus (mit Vorwaertsdrang ueber die Kante)
+    if ((p.jumpHeld || p.jumpQueued) && p.water === 2) {
+      p.v[2] = Math.max(p.v[2], 290);
+      p.jumpQueued = false;
+      flyMove(dt); categorize();
+      return;
+    }
+    p.jumpQueued = false;
+    const sp = Math.hypot(...p.v);
+    if (sp > 0) { const ns = Math.max(0, sp - sp * 4 * dt); for (let i = 0; i < 3; i++) p.v[i] *= ns / sp; }
+    const ws = Math.hypot(...wv);
+    if (ws > 0) {
+      const d = wv.map(v => v / ws), cur = p.v[0] * d[0] + p.v[1] * d[1] + p.v[2] * d[2], add = ws - cur;
+      if (add > 0) { const a = Math.min(10 * ws * dt, add); for (let i = 0; i < 3; i++) p.v[i] += d[i] * a; }
+    }
     flyMove(dt); categorize();
     return;
   }
@@ -1618,6 +1692,13 @@ function hurtPlayer(dmg) {
   sfx(game.passives.kevlar ? 'bhit_kevlar' : 'bhit_flesh', { vol: 0.55, gap: 0.22, important: true });
   if (game.god) return;
   game.hp = Math.max(0, game.hp - Math.max(1, Math.round(dmg * (1 - 0.08 * (game.passives.kevlar || 0)))));
+  if (game.hp <= 0 && ml('revive') && !game.revived) {
+    game.revived = true; game.hp = Math.round(game.maxHp / 2);
+    toast('Zweites Leben!');
+    // Gegner in der Naehe zurueckstossen bzw. erledigen, damit man nicht sofort wieder faellt
+    explode([player.o[0], player.o[1], player.o[2] - 20], 260, 400, 0, null);
+    return;
+  }
   if (game.hp <= 0) endRound(false);
 }
 
@@ -1663,11 +1744,12 @@ function dropLoot(e) {
   if (drops.length > 500) drops.splice(0, drops.length - 500);
 }
 function addXp(v) {
+  v *= 1 + 0.1 * ml('xp');
   game.xp += v; game.money += v * 100;
   while (game.xp >= game.xpNext) { game.xp -= game.xpNext; game.level++; game.xpNext = xpNeed(game.level); game.pending++; }
 }
 function updateDrops(dt) {
-  const p = player, radius = 72 * (1 + 0.3 * (game.passives.kit || 0));
+  const p = player, radius = 72 * (1 + 0.3 * (game.passives.kit || 0)) * (1 + 0.2 * ml('magnet'));
   const px = p.o[0], py = p.o[1], pz = p.o[2] - 20;
   for (const d of drops) {
     d.t += dt;
@@ -1796,7 +1878,7 @@ function weaponStats(id, lvl, evo) {
     if (id === 'roomba') { s.speed *= 1.4; s.magnet = 170; s.contact = 45; }
   }
   const P = game.passives;
-  s.dmg *= 1 + 0.1 * (P.hollow || 0);
+  s.dmg *= (1 + 0.1 * (P.hollow || 0)) * (1 + 0.05 * ml('dmg'));
   s.int *= 1 - 0.08 * (P.reload || 0);
   if (s.reload) s.reload *= 1 - 0.08 * (P.reload || 0);
   if (s.hs !== undefined) s.hs += 0.06 * (P.hstrain || 0);
@@ -1818,8 +1900,8 @@ function addWeapon(id) {
 }
 function refreshStats() {
   for (const w of game.weapons) { const old = w.st; w.st = weaponStats(w.id, w.lvl, w.evo); if (old && w.st.mag > old.mag) w.mag += w.st.mag - old.mag; }
-  MOVE.maxspeed = 250 * (1 + 0.08 * (game.passives.shoes || 0));
-  const mh = 100 + 20 * (game.passives.helm || 0);
+  MOVE.maxspeed = 250 * (1 + 0.08 * (game.passives.shoes || 0)) * (1 + 0.04 * ml('speed'));
+  const mh = 100 + 10 * ml('hp') + 20 * (game.passives.helm || 0);
   if (mh > game.maxHp) game.hp += mh - game.maxHp;
   game.maxHp = mh;
 }
@@ -3124,6 +3206,70 @@ function shootBreakables() {
   }
 }
 
+// ---------------------------------------------------------------- Konto und Waffenhaendler (dauerhaft, im Browser gespeichert)
+const META_DEF = {
+  hp: { name: 'Mehr Leben', icon: 'helm', desc: '+10 max. HP je Stufe', prices: [5000, 15000, 40000, 90000, 180000] },
+  dmg: { name: 'Schadensbonus', icon: 'bullet', desc: '+5 % Schaden aller Waffen je Stufe', prices: [8000, 20000, 50000, 110000, 220000] },
+  xp: { name: 'Geschäftssinn', icon: 'briefcase', desc: '+10 % Geld (und damit Erfahrung) je Stufe', prices: [6000, 15000, 40000, 90000, 180000] },
+  magnet: { name: 'Lange Finger', icon: 'defuser', desc: '+20 % Sammelradius je Stufe', prices: [5000, 20000, 60000] },
+  speed: { name: 'Kondition', icon: 'shoes', desc: '+4 % Lauftempo je Stufe', prices: [10000, 35000, 90000] },
+  offers: { name: 'Viertes Angebot', icon: 'tex_crate_guns01', desc: 'Kaufmenü zeigt 4 statt 3 Angebote', prices: [150000] },
+  revive: { name: 'Zweites Leben', icon: 'kevlar', desc: 'einmal pro Runde wiederbeleben (halbe HP)', prices: [250000] },
+};
+const START_WEAPONS = { deagle: 15000, mp5: 25000, m3: 25000, he: 30000, roomba: 40000, ak47: 50000, turret: 60000, awp: 70000, m249: 80000 };
+const META = (() => {
+  let m = {};
+  try { m = JSON.parse(localStorage.getItem('cs_meta') || '{}'); } catch (e) { m = {}; }
+  return Object.assign({ bank: 0, lv: {}, owned: [], start: null }, m);
+})();
+const ml = k => META.lv[k] || 0;
+function saveMeta() { try { localStorage.setItem('cs_meta', JSON.stringify(META)); } catch (e) { /* privater Modus */ } }
+// Geld der laufenden Runde aufs Konto (einmal pro Runde)
+function bankRun() {
+  if (game.banked || !game.money) return 0;
+  game.banked = true;
+  const m = Math.round(game.money);
+  META.bank += m; saveMeta();
+  return m;
+}
+function renderShop() {
+  $('#bankVal').textContent = fmtMoney(META.bank);
+  $('#startBank').textContent = 'Konto: ' + fmtMoney(META.bank);
+  const rows = Object.entries(META_DEF).map(([k, D]) => {
+    const l = ml(k), max = D.prices.length, price = D.prices[l];
+    const dots = Array.from({ length: max }, (_, i) => `<i class="${i < l ? 'on' : ''}"></i>`).join('');
+    const btn = l >= max ? '<button disabled>MAX</button>' : `<button data-buy="${k}" ${META.bank < price ? 'disabled' : ''}>${fmtMoney(price)}</button>`;
+    return `<div class="srow">${iconImg(D.icon)}<div><b>${D.name}</b><span>${D.desc}</span><em>${dots}</em></div>${btn}</div>`;
+  }).join('');
+  const weapons = Object.entries(START_WEAPONS).map(([id, price]) => {
+    const own = META.owned.includes(id), act = META.start === id;
+    const btn = act ? '<button class="on" data-start="">AKTIV</button>' : own ? `<button data-start="${id}">WÄHLEN</button>` : `<button data-unlock="${id}" ${META.bank < price ? 'disabled' : ''}>${fmtMoney(price)}</button>`;
+    return `<div class="srow">${iconImg(WDEF[id].icon)}<div><b>${WDEF[id].name}</b><span>${own ? 'freigeschaltet' : 'Startwaffe freischalten'}</span></div>${btn}</div>`;
+  }).join('');
+  $('#shopList').innerHTML = '<h2>Dauerhafte Upgrades</h2>' + rows + '<h2>Startwaffe (zusätzlich zu USP und Messer)</h2>' + weapons;
+}
+$('#shopList').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b || b.disabled) return;
+  if (b.dataset.buy) { const k = b.dataset.buy, price = META_DEF[k].prices[ml(k)]; if (META.bank >= price) { META.bank -= price; META.lv[k] = ml(k) + 1; } }
+  else if (b.dataset.unlock) { const id = b.dataset.unlock, price = START_WEAPONS[id]; if (META.bank >= price) { META.bank -= price; META.owned.push(id); META.start = id; } }
+  else if (b.dataset.start !== undefined) META.start = b.dataset.start || null;
+  saveMeta(); renderShop(); sfx('boltpull1', { vol: 0.6 });
+});
+$('#shopBtn').addEventListener('click', () => { audioInit(); renderShop(); $('#shop').classList.add('show'); });
+$('#shopClose').addEventListener('click', () => $('#shop').classList.remove('show'));
+// zurueck ins Hauptmenue: Runde beenden, Geld aufs Konto
+function toMainMenu() {
+  const got = bankRun();
+  playing = false; game.over = true;
+  for (const id of ['menu', 'dead', 'buy']) $('#' + id).classList.remove('show');
+  buyOpen = false;
+  $('#hud').classList.remove('show');
+  if (document.exitPointerLock && pointerLocked) document.exitPointerLock();
+  renderShop();
+  $('#start').classList.add('show');
+  if (got) toast('+' + fmtMoney(got) + ' aufs Konto');
+}
+
 // ---------------------------------------------------------------- Sprites (Geld, Pickups, Kisten, Granaten, C4)
 const progSprite = program(`#version 300 es
 precision highp float;
@@ -3398,6 +3544,7 @@ function frame(now) {
   }
   updateHud(dt);
   drawRadar();
+  { const uw = player.water === 3; if (uw !== frame.uw) { frame.uw = uw; $('#underwater').classList.toggle('on', uw); } }
   updateTurretBtn();
 }
 
@@ -3505,7 +3652,7 @@ function openBuy() {
   buyOpen = true; playing = false;
   input.fwd = input.side = 0; stick = null; stickEl.style.display = 'none';
   if (document.exitPointerLock && pointerLocked) document.exitPointerLock();
-  const offers = makeOffers(3);
+  const offers = makeOffers(ml('offers') ? 4 : 3);
   $('#buyLvl').textContent = 'Level ' + Math.max(2, game.level - game.pending + 1) + (game.pending > 1 ? '  ·  noch ' + (game.pending - 1) + ' weitere' : '');
   const box = $('#cards'); box.innerHTML = '';
   offers.forEach((o, i) => {
@@ -3529,7 +3676,7 @@ function pickOffer(o) {
   buyOpen = false; buyKeys = null;
   if (game.pending > 0) openBuy(); else playing = true;
 }
-addEventListener('keydown', e => { if (buyOpen && buyKeys && /^Digit[1-3]$/.test(e.code)) { const o = buyKeys[+e.code.slice(5) - 1]; if (o) pickOffer(o); } });
+addEventListener('keydown', e => { if (buyOpen && buyKeys && /^Digit[1-4]$/.test(e.code)) { const o = buyKeys[+e.code.slice(5) - 1]; if (o) pickOffer(o); } });
 
 // ---------------------------------------------------------------- Rundenende
 function endRound(won) {
@@ -3542,6 +3689,8 @@ function endRound(won) {
   setTimeout(() => {
     $('#endTitle').textContent = won ? 'COUNTER-TERRORISTS WIN' : 'GEFALLEN';
     $('#endTitle').classList.toggle('win', won);
+    const got = bankRun();
+    $('#bankMsg').innerHTML = got ? `+${fmtMoney(got)} aufs Konto · Kontostand <b>${fmtMoney(META.bank)}</b>` : '';
     $('#deadStats').innerHTML = `Zeit <b>${fmtTime(game.time)}</b> · Kills <b>${game.kills}</b> · Level <b>${game.level}</b> · Geld <b>${fmtMoney(game.money)}</b>`;
     const rows = [...game.weapons].sort((a, b) => b.dmg - a.dmg).map(w =>
       `<tr><td>${iconImg(WDEF[w.id].icon, 'ti')}${WDEF[w.id].name}</td><td>${w.lvl}</td><td>${Math.round(w.dmg).toLocaleString('de-DE')}</td><td>${w.kills}</td></tr>`).join('');
@@ -3553,8 +3702,10 @@ function endRound(won) {
 function restartRound() {
   enemies = []; drops = []; eShots = []; nades = []; c4s = []; fx = []; zones = []; delayed = []; turrets = []; roombas = []; resetBreakables(); $('#killfeed').innerHTML = '';
   Object.assign(game, { hp: 100, maxHp: 100, kills: 0, time: 0, over: false, won: false, spawnAcc: 0, flowT: 0, hurt: 0, deathT: 0,
-    xp: 0, xpNext: xpNeed(1), level: 1, money: 0, pending: 0, weapons: [], passives: {}, bossIdx: 0, boss: null, shake: 0 });
+    xp: 0, xpNext: xpNeed(1), level: 1, money: 0, pending: 0, weapons: [], passives: {}, bossIdx: 0, boss: null, shake: 0, banked: false, revived: false });
+  game.maxHp = game.hp = 100 + 10 * ml('hp');
   addWeapon('usp'); addWeapon('knife');
+  if (META.start && WDEF[META.start] && META.owned.includes(META.start)) addWeapon(META.start);
   refreshStats();
   teleport('ct');
   $('#dead').classList.remove('show'); $('#buy').classList.remove('show'); buyOpen = false;
@@ -3563,6 +3714,8 @@ function restartRound() {
   sfx(Math.random() < 0.5 ? 'locknload' : 'moveout', { vol: 0.85, delay: 0.35, important: true });
 }
 $('#againBtn').addEventListener('click', () => { restartRound(); playing = true; });
+$('#endMenuBtn').addEventListener('click', toMainMenu);
+$('#quitBtn').addEventListener('click', () => { if (game.over || confirm('Runde beenden? Dein Geld kommt aufs Konto.')) toMainMenu(); });
 function refreshTestMenu() {
   $('#godBtn').textContent = 'Unverwundbar: ' + (game.god ? 'an' : 'aus');
   $('#godBtn').classList.toggle('on', game.god);
@@ -3639,6 +3792,7 @@ $('#restartBtn').addEventListener('click', () => { restartRound(); togglePause(f
   await step(100, `Bereit · ${WORLD.tris.toLocaleString('de-DE')} Dreiecke · Wegnetz ${NAV.n.toLocaleString('de-DE')} Knoten (${navMs} ms)`);
   const sb = $('#startBtn');
   sb.disabled = false;
+  renderShop();
   sb.addEventListener('click', () => {
     audioInit();
     $('#start').classList.remove('show');
@@ -3651,7 +3805,7 @@ $('#restartBtn').addEventListener('click', () => { restartRound(); togglePause(f
   requestAnimationFrame(t => { last = t; frame(t); });
   // Test-Schnittstelle (fuer automatische Tests)
   window.__cs = { player, input, teleport, trace, SPOTS, WORLD, BSP, NAV, game, get enemies() { return enemies; }, settings,
-    get drops() { return drops; }, addXp, addWeapon, refreshStats, openChest, get zones() { return zones; }, dbg: () => JSON.stringify({nades: nades.length, c4: c4s.length, shots: eShots.length, fx: fx.length}), start: () => sb.click(), get PROPS() { return PROPS; }, RADAR, drawRadar, SND, sfx, get turrets() { return turrets; }, placeTurret, flowFrom, get roombas() { return roombas; }, get LADDERS() { return LADDERS; }, get BREAKABLES() { return BREAKABLES; }, get drops() { return drops; },  setLight: v => LIGHT.splice(0, 3, ...v) };
+    get drops() { return drops; }, addXp, addWeapon, refreshStats, openChest, get zones() { return zones; }, dbg: () => JSON.stringify({nades: nades.length, c4: c4s.length, shots: eShots.length, fx: fx.length}), start: () => sb.click(), get PROPS() { return PROPS; }, RADAR, drawRadar, SND, sfx, get turrets() { return turrets; }, placeTurret, flowFrom, get roombas() { return roombas; }, get LADDERS() { return LADDERS; }, get BREAKABLES() { return BREAKABLES; }, META, toMainMenu, waterLevel, get drops() { return drops; },  setLight: v => LIGHT.splice(0, 3, ...v) };
 })();
 </script>
 </body>
