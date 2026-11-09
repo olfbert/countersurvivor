@@ -11,6 +11,7 @@ Ego-Shooter im Stil von Counter-Strike 1.6, der sich wie Vampire Survivors spiel
 
 | Version | Phase | Inhalt |
 | --- | --- | --- |
+| v0.9 | Roomba & neue Maps | Roomba zum Kaufen: fährt übers Wegnetz zum nächsten Geldschein in Sicht und saugt ihn ein, sonst folgt er dir (Stufen: schneller, breiter, bis zu 3 Roombas; grün im Radar); Killfeed oben rechts (höchstens 5 Zeilen, normale Kills gedrosselt, Elites und Bosse immer); cs_747 raus, neu: cs_assault, cs_italy, de_rats; Wegnetz findet jetzt auch Treppen unter unsichtbaren Clip-Rampen (sonst kamen auf cs_italy keine Gegner) |
 | v0.8.2 | Fixes | Turm wird richtig dargestellt (Außenhülle war teils unsichtbar, man sah ins Innere); auf Kisten, Fässern und anderen „Inseln“ ohne Weg kommen weiter Gegner: sie laufen zum Boden drumherum und schlagen nach oben |
 | v0.8 | Geschützturm | Neue Waffe „Geschützturm“ (Portal-Sentry): mit dem Knopf TURM (PC: Taste T) vor dir hinstellen, klappt auf, sucht mit rotem Laser und feuert nur in einem 60°-Fächer nach vorn (±30°), sobald der Laser kurz auf dem Ziel liegt; bleibt stehen, Stufen bringen mehr Schaden, Reichweite, Feuerrate und bis zu 3 Türme gleichzeitig; Türme im Radar (hellblau); im Testmenü „Geschützturm geben“ |
 | v0.7 | Sound | Original-CS-Sounds: jede Waffe mit eigenem Schuss, Nachladen, Messer, Granaten, C4 mit schneller werdendem Piepen, Treffer, Headshots, Todesschreie, Schritte (Sand oder Stein je nach Boden), Funksprüche zu Rundenstart, Sieg und Niederlage, Boss-Auftritte, Geisel-Rufe auf cs_747; Geräusche kommen räumlich von links/rechts und werden mit Abstand leiser; Lautstärke im Menü |
@@ -28,8 +29,10 @@ Als Nächstes: Rest von **Phase 4 · CS-Seele** (Bomben-Event auf A/B, Killfeed,
 
 | Map | Datei | Stand |
 | --- | --- | --- |
-| de_dust (Condition Zero) | in `index.html` eingebettet | vollständig, mit Deko-Modellen; Radar aus der Map gerendert |
-| cs_747 | `maps/cs_747.bin` | vollständig texturiert, Radar aus der Übersichtskarte; Himmel ist Ersatz (backalley fehlt) |
+| de_dust (Condition Zero) | in `index.html` eingebettet | vollständig, mit Deko-Modellen |
+| cs_assault | `maps/cs_assault.bin` | vollständig texturiert; Himmel ist Ersatz (city1 fehlt) |
+| cs_italy | `maps/cs_italy.bin` | spielbar; Texturen aus itsitaly.wad fehlen (grau), Himmel Ersatz (green) |
+| de_rats | `maps/de_rats_2001.bin` | spielbar; Küchen-Texturen aus der de_rats-WAD fehlen, Himmel Ersatz (dusk) |
 
 Weitere Maps sind nur Daten: BSP + WADs (+ Himmel, Deko-Modelle, Übersichtskarte) packen, in `maps/` legen und in der Map-Liste der Vorlage eintragen. Nachgeladene Maps funktionieren nur online (GitHub Pages), nicht als lokale Datei.
 
@@ -51,6 +54,7 @@ tools/pack_map.py     BSP + WAD + Himmel -> Map-Paket (nur benutzte Texturen)
 tools/props.py        Deko-Modelle (cycler_sprite/env_model) -> statische Meshes + gemeinsamer Textur-Atlas
 tools/overview.py     passt eine CS-Übersichtskarte (grüner Rand) automatisch an die Map an (fürs Radar)
 tools/skymatch.py     ordnet Himmelsbilder per Kantenabgleich den Würfelseiten zu
+tools/convert_roomba.py Roomba (Tinkercad-OBJ) -> kleines Mesh-Paket (int16, Schattierung im Shader)
 tools/convert_turret.py Portal-Turm (SMD + PNG) -> Turm-Paket (starre Knochen, Aufklapp- und Feueranimation)
 tools/pack_sounds.py  WAVs aus cstrike/sound -> Sound-Paket (8 Bit mono, Stille am Ende gekürzt)
 tools/pack_icons.py   Waffen-/Ausrüstungs-Icons (VGUI/XGUI) und Kisten-Textur als JSON
@@ -61,12 +65,12 @@ Bauen (Pfade zu den eigenen Spieldateien anpassen):
 
 ```
 python3 tools/pack_map.py map.bin de_dust_cz.bsp --wad czde_dust.wad --wad all-in-one.wad --sky-dust himmel/ --props models/ && gzip -9 -k map.bin
-python3 tools/pack_map.py cs_747.bin cs_747.bsp --wad cs_747.wad --wad cstrike.wad --wad all-in-one.wad --overview cs_747_overview.jpg && gzip -9 -c cs_747.bin > maps/cs_747.bin
+python3 tools/pack_map.py cs_italy.bin cs_italy.bsp --wad cstrike.wad --wad all-in-one.wad --props models/ && gzip -9 -c cs_italy.bin > maps/cs_italy.bin
 python3 tools/convert_mdl.py models/ czde_dust.wad models.bin terror,leet,arctic,guerilla,militia && gzip -9 -k models.bin
 python3 tools/pack_icons.py gfx/ czde_dust.wad icons.json
 python3 tools/pack_sounds.py sound/ sounds.bin && gzip -9 -k sounds.bin
 python3 tools/convert_turret.py Turret/ turret.bin && gzip -9 -k turret.bin
-python3 tools/build.py src/game.template.html index.html 0.8 PACK=map.bin.gz MODELS=models.bin.gz ICONS=@icons.json SOUNDS=sounds.bin.gz TURRET=turret.bin.gz
+python3 tools/build.py src/game.template.html index.html 0.9 PACK=map.bin.gz MODELS=models.bin.gz ICONS=@icons.json SOUNDS=sounds.bin.gz TURRET=turret.bin.gz ROOMBA=roomba.bin.gz
 ```
 
 Die BSP wird erst im Browser gelesen (Geometrie, Lightmaps, Kollision, Spawns, Bombsites). Weitere Maps sind damit später nur ein neues Datenpaket.
